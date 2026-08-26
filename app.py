@@ -2,7 +2,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 # ============================================================
@@ -73,24 +72,34 @@ if page == "Project Overview":
     st.write(
         """
         This project applies machine learning techniques to classify
-        individuals into different obesity levels based on physical,
+        individuals into seven obesity levels based on physical,
         dietary, and lifestyle attributes.
+
+        **Method 1** is used during data preparation to reduce highly
+        interpolated observations before model training.
         """
     )
 
     st.info(
-        "The system compares three machine learning models and deploys "
-        "the best-performing model in this Streamlit prototype."
+        "The system compares Decision Tree, Logistic Regression, and "
+        "K-Nearest Neighbors, then deploys the best-performing model."
     )
+
+    st.subheader("Dataset Summary")
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Total Records", "1,612")
-    col2.metric("Input Features", "16")
-    col3.metric("Encoded Features", "22")
+    col1.metric("Rows Before Cleaning", "2,111")
+    col2.metric("After Duplicate Removal", "2,087")
+    col3.metric("Rows After Method 1", "877")
     col4.metric("Target Classes", "7")
 
-    st.subheader("Target Classes")
+    removed_total = 2111 - 877
+    st.caption(
+        f"Total rows removed from the original dataset: {removed_total:,}"
+    )
+
+    st.subheader("Class Distribution After Method 1")
 
     class_df = pd.DataFrame(
         {
@@ -104,13 +113,13 @@ if page == "Project Overview":
                 "Obesity_Type_III"
             ],
             "Records": [
-                160,
-                160,
-                160,
-                160,
-                351,
-                297,
-                324
+                101,
+                282,
+                102,
+                124,
+                152,
+                18,
+                98
             ]
         }
     )
@@ -160,20 +169,107 @@ if page == "Project Overview":
 
 elif page == "Data Preparation":
 
-    st.title("🧹 Data Preparation")
+    st.title("🧹 Data Preparation — Method 1")
 
     st.write(
         """
-        The dataset was cleaned and transformed before model training.
-        The same preprocessing objects are reused in the Streamlit app
-        to keep prediction consistent with the training process.
+        Method 1 identifies highly interpolated observations using five
+        ordinal survey variables: **FCVC, NCP, CH2O, FAF, and TUE**.
+
+        A row is considered highly interpolated when at least **3 of the
+        5 variables contain non-integer values**. These rows are removed
+        before encoding and model training.
         """
     )
 
+    st.subheader("Before and After Cleaning")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Original Rows", "2,111")
+    col2.metric("After Duplicates", "2,087")
+    col3.metric("Rows Removed by Method 1", "1,210")
+    col4.metric("Final Rows", "877")
+
+    cleaning_df = pd.DataFrame(
+        {
+            "Stage": [
+                "Original Dataset",
+                "After Duplicate Removal",
+                "After Method 1 Filtering"
+            ],
+            "Rows": [
+                2111,
+                2087,
+                877
+            ]
+        }
+    )
+
+    st.subheader("Cleaning Result")
+
+    st.dataframe(
+        cleaning_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.bar_chart(
+        cleaning_df.set_index("Stage")["Rows"]
+    )
+
+    st.subheader("Method 1 Rule")
+
+    st.code(
+        """
+Interpolated_Count < 3  -> Keep row
+Interpolated_Count >= 3 -> Remove row
+        """.strip()
+    )
+
+    example_df = pd.DataFrame(
+        {
+            "Feature": [
+                "FCVC",
+                "NCP",
+                "CH2O",
+                "FAF",
+                "TUE"
+            ],
+            "Example Value": [
+                2.184707,
+                3.000000,
+                1.978631,
+                0.838957,
+                1.000000
+            ],
+            "Interpolated?": [
+                "Yes",
+                "No",
+                "Yes",
+                "Yes",
+                "No"
+            ]
+        }
+    )
+
+    st.dataframe(
+        example_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.warning(
+        "The example above has 3 interpolated values, so Method 1 "
+        "classifies the entire row as highly interpolated and removes it."
+    )
+
+    st.subheader("Train / Test Split")
+
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Training Samples", "1,289")
-    col2.metric("Testing Samples", "323")
+    col1.metric("Training Samples", "701")
+    col2.metric("Testing Samples", "176")
     col3.metric("Train / Test Split", "80% / 20%")
 
     st.subheader("Main Preprocessing Steps")
@@ -186,23 +282,29 @@ elif page == "Data Preparation":
                 "3",
                 "4",
                 "5",
-                "6"
+                "6",
+                "7",
+                "8"
             ],
             "Process": [
-                "Data cleaning",
-                "Target encoding",
-                "Categorical encoding",
-                "Train-test split",
-                "Feature standardization",
-                "Save preprocessing objects"
+                "Missing value check",
+                "Duplicate removal",
+                "Invalid-value check",
+                "Interpolated-value detection",
+                "Method 1 row filtering",
+                "Target and categorical encoding",
+                "80/20 stratified split",
+                "Feature standardization"
             ],
             "Method": [
-                "Check missing values, duplicates and outliers",
-                "LabelEncoder",
-                "One-hot encoding with drop_first=True",
-                "80/20 stratified split, random_state=42",
-                "StandardScaler fitted on training data",
-                "scaler.pkl, label_encoder.pkl, feature_columns.pkl"
+                "Check null values",
+                "drop_duplicates()",
+                "Check Age, Height and Weight > 0",
+                "Check FCVC, NCP, CH2O, FAF and TUE",
+                "Remove rows where Interpolated_Count >= 3",
+                "LabelEncoder + one-hot encoding",
+                "random_state=42, stratify=y",
+                "StandardScaler fitted on training data only"
             ]
         }
     )
@@ -214,8 +316,8 @@ elif page == "Data Preparation":
     )
 
     st.success(
-        "Important: the scaler is fitted only on the training set, "
-        "then used to transform both the test set and new Streamlit input."
+        "The scaler is fitted only on the training set and then used "
+        "to transform both the test data and new Streamlit input."
     )
 
     with st.expander("Encoded feature columns used by the model"):
@@ -228,14 +330,14 @@ elif page == "Data Preparation":
 
 elif page == "Model Comparison":
 
-    st.title("🤖 Model Comparison")
+    st.title("🤖 Model Comparison — Method 1")
 
     st.write(
         """
         Logistic Regression is used as the baseline model.
         Decision Tree and KNN are tuned using GridSearchCV.
-        Macro F1-Score is used as the main criterion when selecting
-        the best overall model.
+        The models are evaluated using Accuracy, Macro Precision,
+        Macro Recall, and Macro F1-Score.
         """
     )
 
@@ -267,11 +369,11 @@ elif page == "Model Comparison":
             {
                 "criterion": "entropy",
                 "max_depth": 10,
-                "min_samples_leaf": 3,
+                "min_samples_leaf": 5,
                 "min_samples_split": 5
             }
         )
-        st.write("CV Macro F1: 90.98%")
+        st.write("CV Macro F1: 84.21%")
 
     with col3:
         st.markdown("#### K-Nearest Neighbors")
@@ -284,7 +386,7 @@ elif page == "Model Comparison":
                 "weights": "distance"
             }
         )
-        st.write("CV Score: 86.96%")
+        st.write("CV Accuracy: 72.05%")
 
     st.divider()
 
@@ -302,24 +404,24 @@ elif page == "Model Comparison":
                 "K-Nearest Neighbors"
             ],
             "Accuracy (%)": [
-                93.81,
-                86.38,
-                85.14
+                89.20,
+                81.25,
+                78.98
             ],
             "Macro Precision (%)": [
-                91.74,
-                83.44,
-                80.69
+                90.44,
+                74.32,
+                75.66
             ],
             "Macro Recall (%)": [
-                92.01,
-                83.20,
-                81.10
+                83.38,
+                72.27,
+                70.79
             ],
             "Macro F1-Score (%)": [
-                91.82,
-                83.08,
-                80.34
+                85.58,
+                72.72,
+                72.32
             ]
         }
     )
@@ -330,91 +432,18 @@ elif page == "Model Comparison":
         hide_index=True
     )
 
-    # --------------------------------------------------------
-    # GROUPED BAR CHART - SAME STYLE AS NOTEBOOK
-    # --------------------------------------------------------
+    chart_df = performance_df.set_index("Model")
 
-    models = performance_df["Model"].tolist()
-
-    accuracy = performance_df["Accuracy (%)"].tolist()
-    precision = performance_df["Macro Precision (%)"].tolist()
-    recall = performance_df["Macro Recall (%)"].tolist()
-    f1_score = performance_df["Macro F1-Score (%)"].tolist()
-
-    x = list(range(len(models)))
-    width = 0.18
-
-    fig, ax = plt.subplots(figsize=(13, 6))
-
-    bars1 = ax.bar(
-        [i - 1.5 * width for i in x],
-        accuracy,
-        width,
-        label="Accuracy"
+    st.bar_chart(
+        chart_df[
+            [
+                "Accuracy (%)",
+                "Macro Precision (%)",
+                "Macro Recall (%)",
+                "Macro F1-Score (%)"
+            ]
+        ]
     )
-
-    bars2 = ax.bar(
-        [i - 0.5 * width for i in x],
-        precision,
-        width,
-        label="Macro Precision"
-    )
-
-    bars3 = ax.bar(
-        [i + 0.5 * width for i in x],
-        recall,
-        width,
-        label="Macro Recall"
-    )
-
-    bars4 = ax.bar(
-        [i + 1.5 * width for i in x],
-        f1_score,
-        width,
-        label="Macro F1-Score"
-    )
-
-    # Add percentage labels above every bar
-    for bars in [bars1, bars2, bars3, bars4]:
-        for bar in bars:
-            value = bar.get_height()
-
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                value + 0.6,
-                f"{value:.2f}%",
-                ha="center",
-                va="bottom",
-                fontsize=9
-            )
-
-    ax.set_title(
-        "Overall Performance Comparison of Machine Learning Models",
-        fontsize=14
-    )
-
-    ax.set_xlabel(
-        "Machine Learning Model"
-    )
-
-    ax.set_ylabel(
-        "Performance (%)"
-    )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(models)
-
-    ax.set_ylim(0, 100)
-
-    ax.legend(
-        title="Evaluation Metrics"
-    )
-
-    fig.tight_layout()
-
-    st.pyplot(fig)
-
-    plt.close(fig)
 
     # --------------------------------------------------------
     # BEST MODEL
@@ -426,18 +455,18 @@ elif page == "Model Comparison":
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Accuracy", "93.81%")
-    col2.metric("Macro Precision", "91.74%")
-    col3.metric("Macro Recall", "92.01%")
-    col4.metric("Macro F1", "91.82%")
+    col1.metric("Accuracy", "89.20%")
+    col2.metric("Macro Precision", "90.44%")
+    col3.metric("Macro Recall", "83.38%")
+    col4.metric("Macro F1", "85.58%")
 
     st.write(
         """
         **Why Decision Tree was selected:**  
-        It achieved the highest test-set Accuracy and Macro F1-Score
-        among the three evaluated models. The regularized tree also uses
-        `min_samples_leaf=3` and `min_samples_split=5` to reduce overly
-        small leaf nodes and make its probability outputs less extreme.
+        Decision Tree achieved the highest Macro F1-Score and Accuracy
+        among the three evaluated models after Method 1 data preparation.
+        Its tuned configuration also limits very small leaf nodes through
+        `min_samples_leaf=5` and `min_samples_split=5`.
         """
     )
 
@@ -537,20 +566,16 @@ elif page == "Live Prediction":
     col1, col2 = st.columns(2)
 
     with col1:
-        fcvc = st.slider(
+        fcvc = st.selectbox(
             "Vegetable consumption frequency (FCVC)",
-            min_value=1.0,
-            max_value=3.0,
-            value=2.0,
-            step=0.1
+            [1.0, 2.0, 3.0],
+            index=1
         )
 
-        ncp = st.slider(
+        ncp = st.selectbox(
             "Number of main meals per day (NCP)",
-            min_value=1.0,
-            max_value=4.0,
-            value=3.0,
-            step=0.1
+            [1.0, 2.0, 3.0, 4.0],
+            index=2
         )
 
         caec = st.selectbox(
@@ -564,12 +589,10 @@ elif page == "Live Prediction":
         )
 
     with col2:
-        ch2o = st.slider(
+        ch2o = st.selectbox(
             "Daily water consumption (CH2O)",
-            min_value=1.0,
-            max_value=3.0,
-            value=2.0,
-            step=0.1
+            [1.0, 2.0, 3.0],
+            index=1
         )
 
         calc = st.selectbox(
@@ -591,20 +614,16 @@ elif page == "Live Prediction":
     col1, col2 = st.columns(2)
 
     with col1:
-        faf = st.slider(
+        faf = st.selectbox(
             "Physical activity frequency (FAF)",
-            min_value=0.0,
-            max_value=3.0,
-            value=1.0,
-            step=0.1
+            [0.0, 1.0, 2.0, 3.0],
+            index=1
         )
 
-        tue = st.slider(
+        tue = st.selectbox(
             "Technology usage time (TUE)",
-            min_value=0.0,
-            max_value=2.0,
-            value=1.0,
-            step=0.1
+            [0.0, 1.0, 2.0],
+            index=1
         )
 
     with col2:
