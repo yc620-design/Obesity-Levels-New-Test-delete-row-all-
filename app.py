@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
 import joblib
 from pathlib import Path
 
@@ -295,12 +298,10 @@ page = st.sidebar.radio(
     "Navigation",
     [
         "Project Overview",
-        "Data Understanding",
         "Data Analysis",
         "Data Preparation",
         "Model Evaluation",
-        "Live Prediction",
-        "Conclusion & Limitations"
+        "Live Prediction"
     ]
 )
 
@@ -409,99 +410,10 @@ if page == "Project Overview":
     )
 
 
-# ============================================================
-# DATA UNDERSTANDING
-# ============================================================
-
-elif page == "Data Understanding":
-
-    st.title("Data Understanding")
-
-    if raw_df is None:
-        st.error(
-            "Add `ObesityDataSet_raw_and_data_sinthetic.csv` "
-            "to the same folder as app.py."
-        )
-        st.stop()
-
-    st.caption(
-        f"Loaded file: {dataset_name}"
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Rows", f"{raw_df.shape[0]:,}")
-    c2.metric("Columns", raw_df.shape[1])
-    c3.metric(
-        "Numerical Columns",
-        raw_df.select_dtypes(
-            include=np.number
-        ).shape[1]
-    )
-    c4.metric(
-        "Categorical Columns",
-        raw_df.select_dtypes(
-            exclude=np.number
-        ).shape[1]
-    )
-
-    st.subheader("Dataset Preview")
-
-    st.dataframe(
-        raw_df.head(10),
-        use_container_width=True
-    )
-
-    st.subheader("Summary Statistics")
-
-    st.dataframe(
-        raw_df.describe().T.round(3),
-        use_container_width=True
-    )
-
-    st.subheader("Target Class Distribution")
-
-    class_counts = (
-        raw_df["NObeyesdad"]
-        .value_counts()
-        .rename_axis("Obesity Level")
-        .reset_index(name="Records")
-    )
-
-    class_counts["Percentage"] = (
-        class_counts["Records"]
-        / class_counts["Records"].sum()
-        * 100
-    ).round(2)
-
-    st.dataframe(
-        class_counts,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.subheader("Data Quality Snapshot")
-
-    q1, q2, q3 = st.columns(3)
-
-    q1.metric(
-        "Missing Values",
-        int(raw_df.isnull().sum().sum())
-    )
-
-    q2.metric(
-        "Exact Duplicates",
-        int(raw_df.duplicated().sum())
-    )
-
-    q3.metric(
-        "Target Classes",
-        raw_df["NObeyesdad"].nunique()
-    )
 
 
 # ============================================================
-# DATA ANALYSIS — 5 GRAPHS
+# DATA ANALYSIS — BASED ON NOTEBOOK CODING PART
 # ============================================================
 
 elif page == "Data Analysis":
@@ -514,32 +426,38 @@ elif page == "Data Analysis":
         )
         st.stop()
 
+    # Use the same dataframe name as the notebook coding part
+    obe = raw_df.copy()
+
     st.write(
         """
-        Five visualisations are provided to explore class distribution,
-        eating habits, lifestyle behaviour and relationships among
-        physical and numerical variables.
+        This section follows the **Data Analysis coding part in the notebook**.
+        The same variables, calculations and graph types are used so that the
+        Streamlit prototype is consistent with the Python implementation.
         """
     )
 
     # --------------------------------------------------------
-    # GRAPH 1 — CLASS DISTRIBUTION
+    # GRAPH 1 — DISTRIBUTION OF OBESITY LEVELS
+    # Notebook:
+    # sns.countplot(data=obe, x="NObeyesdad")
     # --------------------------------------------------------
 
     st.subheader("1. Distribution of Obesity Levels")
 
-    class_counts = (
-        raw_df["NObeyesdad"]
-        .value_counts()
-        .reindex(CLASS_ORDER)
-        .dropna()
+    fig1, ax1 = plt.subplots(
+        figsize=(10, 5)
     )
 
-    fig1, ax1 = plt.subplots(figsize=(11, 5.5))
+    sns.countplot(
+        data=obe,
+        x="NObeyesdad",
+        ax=ax1
+    )
 
-    bars = ax1.bar(
-        class_counts.index,
-        class_counts.values
+    ax1.tick_params(
+        axis="x",
+        rotation=45
     )
 
     ax1.set_title(
@@ -551,289 +469,321 @@ elif page == "Data Analysis":
     )
 
     ax1.set_ylabel(
-        "Number of Records"
+        "Number of Individuals"
     )
-
-    ax1.tick_params(
-        axis="x",
-        rotation=35
-    )
-
-    for bar in bars:
-        ax1.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 4,
-            f"{int(bar.get_height())}",
-            ha="center",
-            va="bottom",
-            fontsize=9
-        )
 
     fig1.tight_layout()
-    st.pyplot(fig1)
-    plt.close(fig1)
+
+    st.pyplot(
+        fig1
+    )
+
+    plt.close(
+        fig1
+    )
 
     st.caption(
-        "The classes are relatively close in size in the original dataset, "
-        "although they are not perfectly balanced."
+        "This count plot shows how many records belong to each "
+        "NObeyesdad obesity-level class."
     )
 
     # --------------------------------------------------------
-    # GRAPH 2 — CAEC BY OBESITY LEVEL
+    # GRAPH 2 — EATING BETWEEN MEALS
+    # Notebook:
+    # sns.countplot(data=obe, x='CAEC',
+    #               hue='NObeyesdad', palette='viridis')
     # --------------------------------------------------------
 
     st.subheader(
         "2. Eating Between Meals (CAEC) by Obesity Level"
     )
 
-    caec_table = pd.crosstab(
-        raw_df["CAEC"],
-        raw_df["NObeyesdad"]
-    )
-
-    caec_order = [
-        item for item in [
-            "no",
-            "Sometimes",
-            "Frequently",
-            "Always"
-        ]
-        if item in caec_table.index
+    # The notebook uses "No", while the CSV stores this category as "no".
+    # The lowercase value is used here so the same category appears correctly.
+    snack_order = [
+        "no",
+        "Sometimes",
+        "Frequently",
+        "Always"
     ]
 
-    caec_table = caec_table.reindex(
-        caec_order
+    available_order = [
+        value
+        for value in snack_order
+        if value in obe["CAEC"].unique()
+    ]
+
+    fig2, ax2 = plt.subplots(
+        figsize=(12, 6)
     )
 
-    caec_table = caec_table.reindex(
-        columns=[
-            c for c in CLASS_ORDER
-            if c in caec_table.columns
-        ]
-    )
-
-    fig2, ax2 = plt.subplots(figsize=(12, 6))
-
-    caec_table.plot(
-        kind="bar",
+    sns.countplot(
+        data=obe,
+        x="CAEC",
+        hue="NObeyesdad",
+        palette="viridis",
+        order=available_order,
         ax=ax2
     )
 
     ax2.set_title(
-        "Eating Between Meals (CAEC) Broken Down by Obesity Level"
+        "Eating Between Meals (CAEC) Broken Down by Obesity Level",
+        fontsize=14,
+        fontweight="bold"
     )
 
     ax2.set_xlabel(
-        "Frequency of Snacking Between Meals"
+        "Frequency of Snacking Between Meals",
+        fontsize=12
     )
 
     ax2.set_ylabel(
-        "Number of Individuals"
-    )
-
-    ax2.tick_params(
-        axis="x",
-        rotation=0
+        "Number of Individuals",
+        fontsize=12
     )
 
     ax2.legend(
         title="Obesity Level",
-        bbox_to_anchor=(1.02, 1),
+        bbox_to_anchor=(1.05, 1),
         loc="upper left"
     )
 
+    ax2.grid(
+        axis="y",
+        linestyle="--",
+        alpha=0.4
+    )
+
     fig2.tight_layout()
-    st.pyplot(fig2)
-    plt.close(fig2)
+
+    st.pyplot(
+        fig2
+    )
+
+    plt.close(
+        fig2
+    )
 
     st.caption(
-        "This chart compares snacking-frequency categories across all "
-        "seven obesity levels."
+        "CAEC represents eating between meals. The graph compares "
+        "snacking-frequency categories across the obesity classes."
     )
 
     # --------------------------------------------------------
     # GRAPH 3 — FAF VS TUE
+    # Notebook:
+    # group by NObeyesdad, calculate mean FAF/TUE,
+    # melt the dataframe, then use sns.pointplot()
     # --------------------------------------------------------
 
     st.subheader(
         "3. Average Physical Activity (FAF) vs Technology Time (TUE)"
     )
 
-    habit_means = (
-        raw_df
-        .groupby("NObeyesdad")[["FAF", "TUE"]]
+    avg_habits = (
+        obe.groupby(
+            "NObeyesdad"
+        )[[
+            "FAF",
+            "TUE"
+        ]]
         .mean()
-        .reindex(CLASS_ORDER)
-        .dropna()
+        .reset_index()
     )
 
-    fig3, ax3 = plt.subplots(figsize=(12, 6))
+    avg_habits_melted = avg_habits.melt(
+        id_vars="NObeyesdad",
+        var_name="Habit",
+        value_name="Average Score"
+    )
 
-    habit_means.plot(
-        kind="bar",
+    fig3, ax3 = plt.subplots(
+        figsize=(12, 6)
+    )
+
+    sns.pointplot(
+        data=avg_habits_melted,
+        x="NObeyesdad",
+        y="Average Score",
+        hue="Habit",
+        markers=["o", "s"],
+        linestyles=["-", "--"],
+        palette="Dark2",
         ax=ax3
     )
 
     ax3.set_title(
-        "Average Physical Activity and Technology Use by Obesity Level"
+        "Average Physical Activity (FAF) vs. Technology Time (TUE) "
+        "by Weight Category",
+        fontsize=14,
+        fontweight="bold"
     )
 
     ax3.set_xlabel(
-        "Obesity Level"
+        "Weight Category (NObeyesdad)",
+        fontsize=12
     )
 
     ax3.set_ylabel(
-        "Average Score"
+        "Average Feature Score",
+        fontsize=12
     )
 
     ax3.tick_params(
         axis="x",
-        rotation=35
+        rotation=30
     )
 
-    ax3.legend(
-        title="Lifestyle Feature"
+    ax3.grid(
+        True,
+        linestyle="--",
+        alpha=0.5
     )
 
     fig3.tight_layout()
-    st.pyplot(fig3)
-    plt.close(fig3)
+
+    st.pyplot(
+        fig3
+    )
+
+    plt.close(
+        fig3
+    )
 
     st.caption(
-        "FAF represents physical-activity frequency and TUE represents "
-        "technology-use time."
+        "The notebook first calculates the average FAF and TUE for "
+        "each obesity class. FAF is physical activity frequency and "
+        "TUE is technology-use time."
     )
+
+    with st.expander(
+        "Show Average FAF and TUE Values"
+    ):
+        st.dataframe(
+            avg_habits.round(3),
+            use_container_width=True,
+            hide_index=True
+        )
 
     # --------------------------------------------------------
     # GRAPH 4 — HEIGHT VS WEIGHT
+    # Notebook:
+    # b, m = polyfit(obe.Height, obe.Weight, 1)
     # --------------------------------------------------------
 
-    st.subheader("4. Height vs Weight")
+    st.subheader(
+        "4. Scatterplot: Height vs Weight"
+    )
 
-    x = raw_df["Height"].to_numpy()
-    y = raw_df["Weight"].to_numpy()
+    from numpy.polynomial.polynomial import polyfit
 
-    slope, intercept = np.polyfit(
-        x,
-        y,
+    b, m = polyfit(
+        obe["Height"],
+        obe["Weight"],
         1
     )
 
-    x_line = np.linspace(
-        x.min(),
-        x.max(),
-        100
-    )
-
-    y_line = (
-        slope * x_line
-        + intercept
-    )
-
-    fig4, ax4 = plt.subplots(figsize=(9, 6))
-
-    ax4.scatter(
-        x,
-        y,
-        alpha=0.45
+    fig4, ax4 = plt.subplots(
+        figsize=(9, 6)
     )
 
     ax4.plot(
-        x_line,
-        y_line
+        obe["Height"],
+        obe["Weight"],
+        "."
+    )
+
+    ax4.plot(
+        obe["Height"],
+        b + m * obe["Height"],
+        "-"
+    )
+
+    ax4.set_xlabel(
+        "Height"
+    )
+
+    ax4.set_ylabel(
+        "Weight"
     )
 
     ax4.set_title(
         "Scatterplot: Height vs Weight"
     )
 
-    ax4.set_xlabel(
-        "Height (m)"
-    )
-
-    ax4.set_ylabel(
-        "Weight (kg)"
-    )
-
     fig4.tight_layout()
-    st.pyplot(fig4)
-    plt.close(fig4)
 
-    correlation = raw_df[
-        ["Height", "Weight"]
-    ].corr().iloc[0, 1]
+    st.pyplot(
+        fig4
+    )
+
+    plt.close(
+        fig4
+    )
+
+    height_weight_corr = (
+        obe[[
+            "Height",
+            "Weight"
+        ]]
+        .corr()
+        .iloc[0, 1]
+    )
 
     st.caption(
-        f"Pearson correlation between Height and Weight: "
-        f"{correlation:.3f}."
+        f"The dots represent individual records and the line is the "
+        f"linear trend fitted in the notebook. Pearson correlation = "
+        f"{height_weight_corr:.3f}."
     )
 
     # --------------------------------------------------------
     # GRAPH 5 — CORRELATION HEATMAP
+    # Notebook:
+    # corr = obe.corr(numeric_only=True)
+    # sns.heatmap(... annot=True, fmt=".2f", cmap="rocket")
     # --------------------------------------------------------
 
-    st.subheader("5. Correlation Heatmap")
-
-    numeric_df = raw_df.select_dtypes(
-        include=np.number
+    st.subheader(
+        "5. Correlation Heatmap"
     )
 
-    corr = numeric_df.corr()
-
-    fig5, ax5 = plt.subplots(figsize=(10, 8))
-
-    heat = ax5.imshow(
-        corr.to_numpy(),
-        aspect="auto"
+    corr = obe.corr(
+        numeric_only=True
     )
 
-    ax5.set_xticks(
-        np.arange(len(corr.columns))
+    fig5, ax5 = plt.subplots(
+        figsize=(10, 8)
     )
 
-    ax5.set_yticks(
-        np.arange(len(corr.columns))
-    )
-
-    ax5.set_xticklabels(
-        corr.columns,
-        rotation=45,
-        ha="right"
-    )
-
-    ax5.set_yticklabels(
-        corr.columns
-    )
-
-    for i in range(len(corr.columns)):
-        for j in range(len(corr.columns)):
-            ax5.text(
-                j,
-                i,
-                f"{corr.iloc[i, j]:.2f}",
-                ha="center",
-                va="center",
-                fontsize=7
-            )
-
-    fig5.colorbar(
-        heat,
-        ax=ax5,
-        fraction=0.046,
-        pad=0.04
+    sns.heatmap(
+        corr,
+        xticklabels=corr.columns,
+        yticklabels=corr.columns,
+        annot=True,
+        fmt=".2f",
+        cmap="rocket",
+        ax=ax5
     )
 
     ax5.set_title(
-        "Correlation Heatmap for Numerical Features"
+        "Correlation Heatmap for Obesity Dataset"
     )
 
     fig5.tight_layout()
-    st.pyplot(fig5)
-    plt.close(fig5)
+
+    st.pyplot(
+        fig5
+    )
+
+    plt.close(
+        fig5
+    )
 
     st.caption(
-        "The heatmap summarises pairwise linear relationships among "
-        "the numerical variables."
+        "The heatmap displays pairwise correlations between the "
+        "numerical variables. Values closer to +1 indicate a stronger "
+        "positive relationship, while values closer to -1 indicate a "
+        "stronger negative relationship."
     )
 
 
@@ -982,13 +932,6 @@ elif page == "Data Preparation":
     st.info(
         "The actual notebook split contains 701 training records and "
         "176 testing records, with 23 encoded input features."
-    )
-
-    st.warning(
-        "Limitation: the interpolation filtering rule removes a large "
-        "proportion of the duplicate-cleaned dataset. This should be "
-        "reported transparently because it can affect class representation "
-        "and generalisability."
     )
 
 
@@ -1260,13 +1203,19 @@ elif page == "Model Evaluation":
     )
 
 
+
+
 # ============================================================
 # LIVE PREDICTION
 # ============================================================
 
 elif page == "Live Prediction":
 
-    st.title("Live Obesity-Level Prediction")
+    st.title("🔍 Live Obesity Level Prediction")
+
+    # --------------------------------------------------------
+    # CHECK MODEL FILES
+    # --------------------------------------------------------
 
     if (
         model is None
@@ -1275,8 +1224,8 @@ elif page == "Live Prediction":
         or feature_columns is None
     ):
         st.error(
-            "Prediction files are missing. Add the following files "
-            "to the same folder as app.py:"
+            "Prediction files are missing. Please place these files "
+            "in the same folder as app.py:"
         )
 
         st.code(
@@ -1293,388 +1242,522 @@ feature_columns.pkl"""
         st.stop()
 
     st.info(
-        f"Loaded prediction model: {type(model).__name__}"
+        """
+        **How to use this page**
+
+        1. Enter your personal information.
+        2. Choose your eating and lifestyle habits.
+        3. The prediction appears automatically — no button is needed.
+        """
     )
 
-    with st.form("prediction_form"):
+    # ========================================================
+    # INPUT SECTION
+    # ========================================================
 
-        st.subheader("Physical Information")
+    st.subheader("Step 1 — Enter Your Information")
 
-        c1, c2 = st.columns(2)
+    input_left, input_right = st.columns(2)
 
-        with c1:
-            gender = st.selectbox(
-                "Gender",
-                ["Female", "Male"]
-            )
+    # --------------------------------------------------------
+    # PERSONAL INFORMATION
+    # --------------------------------------------------------
 
-            age = st.number_input(
-                "Age",
-                min_value=10.0,
-                max_value=100.0,
-                value=25.0,
-                step=1.0
-            )
+    with input_left:
 
-            height = st.number_input(
-                "Height (m)",
-                min_value=1.20,
-                max_value=2.20,
-                value=1.70,
-                step=0.01
-            )
+        st.markdown("#### Personal Information")
 
-            weight = st.number_input(
-                "Weight (kg)",
-                min_value=30.0,
-                max_value=250.0,
-                value=70.0,
-                step=1.0
-            )
-
-        with c2:
-            family_history = st.selectbox(
-                "Family history of overweight",
-                ["no", "yes"]
-            )
-
-            favc = st.selectbox(
-                "Frequent high-calorie food consumption (FAVC)",
-                ["no", "yes"]
-            )
-
-            smoke = st.selectbox(
-                "Smoking (SMOKE)",
-                ["no", "yes"]
-            )
-
-            scc = st.selectbox(
-                "Calorie monitoring (SCC)",
-                ["no", "yes"]
-            )
-
-        st.subheader("Eating Habits")
-
-        c3, c4 = st.columns(2)
-
-        with c3:
-            fcvc = st.slider(
-                "Vegetable consumption frequency (FCVC)",
-                1.0,
-                3.0,
-                2.0,
-                0.1
-            )
-
-            ncp = st.slider(
-                "Number of main meals (NCP)",
-                1.0,
-                4.0,
-                3.0,
-                0.1
-            )
-
-            caec = st.selectbox(
-                "Eating between meals (CAEC)",
-                [
-                    "no",
-                    "Sometimes",
-                    "Frequently",
-                    "Always"
-                ]
-            )
-
-        with c4:
-            ch2o = st.slider(
-                "Daily water consumption (CH2O)",
-                1.0,
-                3.0,
-                2.0,
-                0.1
-            )
-
-            calc = st.selectbox(
-                "Alcohol consumption (CALC)",
-                [
-                    "no",
-                    "Sometimes",
-                    "Frequently",
-                    "Always"
-                ]
-            )
-
-        st.subheader("Lifestyle")
-
-        c5, c6 = st.columns(2)
-
-        with c5:
-            faf = st.slider(
-                "Physical activity frequency (FAF)",
-                0.0,
-                3.0,
-                1.0,
-                0.1
-            )
-
-            tue = st.slider(
-                "Technology-use time (TUE)",
-                0.0,
-                2.0,
-                1.0,
-                0.1
-            )
-
-        with c6:
-            mtrans = st.selectbox(
-                "Main transportation (MTRANS)",
-                [
-                    "Automobile",
-                    "Bike",
-                    "Motorbike",
-                    "Public_Transportation",
-                    "Walking"
-                ]
-            )
-
-        submitted = st.form_submit_button(
-            "Predict Obesity Level",
-            type="primary",
-            use_container_width=True
+        gender = st.selectbox(
+            "Gender",
+            ["Female", "Male"]
         )
+
+        age = st.number_input(
+            "Age",
+            min_value=10.0,
+            max_value=100.0,
+            value=25.0,
+            step=1.0
+        )
+
+        height = st.number_input(
+            "Height (metres)",
+            min_value=1.20,
+            max_value=2.20,
+            value=1.70,
+            step=0.01
+        )
+
+        weight = st.number_input(
+            "Weight (kg)",
+            min_value=30.0,
+            max_value=250.0,
+            value=70.0,
+            step=1.0
+        )
+
+        family_history = st.selectbox(
+            "Family history of overweight?",
+            ["no", "yes"]
+        )
+
+        favc = st.selectbox(
+            "Do you often eat high-calorie food?",
+            ["no", "yes"]
+        )
+
+        smoke = st.selectbox(
+            "Do you smoke?",
+            ["no", "yes"]
+        )
+
+        scc = st.selectbox(
+            "Do you monitor your calorie intake?",
+            ["no", "yes"]
+        )
+
+    # --------------------------------------------------------
+    # EATING + LIFESTYLE
+    # --------------------------------------------------------
+
+    with input_right:
+
+        st.markdown("#### Eating Habits")
+
+        fcvc = st.select_slider(
+            "Vegetable consumption",
+            options=[1.0, 2.0, 3.0],
+            value=2.0,
+            format_func=lambda x: {
+                1.0: "Low",
+                2.0: "Medium",
+                3.0: "High"
+            }[x]
+        )
+
+        ncp = st.select_slider(
+            "Main meals per day",
+            options=[1.0, 2.0, 3.0, 4.0],
+            value=3.0,
+            format_func=lambda x: (
+                f"{int(x)} meal"
+                if x == 1
+                else f"{int(x)} meals"
+            )
+        )
+
+        caec = st.selectbox(
+            "Eating between meals",
+            ["no", "Sometimes", "Frequently", "Always"],
+            format_func=lambda x: "Never" if x == "no" else x
+        )
+
+        ch2o = st.select_slider(
+            "Water intake",
+            options=[1.0, 2.0, 3.0],
+            value=2.0,
+            format_func=lambda x: {
+                1.0: "Low",
+                2.0: "Medium",
+                3.0: "High"
+            }[x]
+        )
+
+        calc = st.selectbox(
+            "Alcohol consumption",
+            ["no", "Sometimes", "Frequently", "Always"],
+            format_func=lambda x: "Never" if x == "no" else x
+        )
+
+        st.markdown("#### Lifestyle")
+
+        faf = st.select_slider(
+            "Physical activity",
+            options=[0.0, 1.0, 2.0, 3.0],
+            value=1.0,
+            format_func=lambda x: {
+                0.0: "Very Low",
+                1.0: "Low",
+                2.0: "Moderate",
+                3.0: "High"
+            }[x]
+        )
+
+        tue = st.select_slider(
+            "Technology usage",
+            options=[0.0, 1.0, 2.0],
+            value=1.0,
+            format_func=lambda x: {
+                0.0: "Low",
+                1.0: "Medium",
+                2.0: "High"
+            }[x]
+        )
+
+        mtrans = st.selectbox(
+            "Main transportation",
+            [
+                "Automobile",
+                "Bike",
+                "Motorbike",
+                "Public_Transportation",
+                "Walking"
+            ],
+            format_func=lambda x: x.replace("_", " ")
+        )
+
+    # ========================================================
+    # PREPARE INPUT FOR MODEL
+    # ========================================================
 
     bmi = weight / (height ** 2)
 
-    st.metric(
-        "Calculated BMI for reference",
-        f"{bmi:.2f}"
+    input_encoded = pd.DataFrame(
+        0.0,
+        index=[0],
+        columns=feature_columns
     )
 
-    if submitted:
+    # Numerical inputs
+    numeric_values = {
+        "Age": age,
+        "Height": height,
+        "Weight": weight,
+        "FCVC": fcvc,
+        "NCP": ncp,
+        "CH2O": ch2o,
+        "FAF": faf,
+        "TUE": tue
+    }
 
-        input_encoded = pd.DataFrame(
-            0.0,
-            index=[0],
-            columns=feature_columns
-        )
+    for column, value in numeric_values.items():
+        if column in input_encoded.columns:
+            input_encoded.loc[0, column] = value
 
-        numeric_values = {
-            "Age": age,
-            "Height": height,
-            "Weight": weight,
-            "FCVC": fcvc,
-            "NCP": ncp,
-            "CH2O": ch2o,
-            "FAF": faf,
-            "TUE": tue
-        }
+    # Categorical inputs
+    categorical_values = {
+        "Gender": gender,
+        "family_history_with_overweight": family_history,
+        "FAVC": favc,
+        "CAEC": caec,
+        "SMOKE": smoke,
+        "SCC": scc,
+        "CALC": calc,
+        "MTRANS": mtrans
+    }
 
-        for column, value in numeric_values.items():
-            if column in input_encoded.columns:
-                input_encoded.loc[
-                    0,
-                    column
-                ] = value
+    for feature, value in categorical_values.items():
+        dummy_column = f"{feature}_{value}"
 
-        categorical_values = {
-            "Gender": gender,
-            "family_history_with_overweight": family_history,
-            "FAVC": favc,
-            "CAEC": caec,
-            "SMOKE": smoke,
-            "SCC": scc,
-            "CALC": calc,
-            "MTRANS": mtrans
-        }
+        if dummy_column in input_encoded.columns:
+            input_encoded.loc[0, dummy_column] = 1.0
 
-        for feature, value in categorical_values.items():
-            dummy_column = (
-                f"{feature}_{value}"
-            )
+    # ========================================================
+    # AUTOMATIC PREDICTION
+    # ========================================================
 
-            if dummy_column in input_encoded.columns:
-                input_encoded.loc[
-                    0,
-                    dummy_column
-                ] = 1.0
+    input_scaled = scaler.transform(
+        input_encoded
+    )
 
-        input_scaled = scaler.transform(
-            input_encoded
-        )
+    prediction = model.predict(
+        input_scaled
+    )
 
-        prediction = model.predict(
+    predicted_label = label_encoder.inverse_transform(
+        prediction.astype(int)
+    )[0]
+
+    friendly_label = predicted_label.replace(
+        "_",
+        " "
+    )
+
+    # Probability / confidence
+    probability_df = None
+    confidence = None
+
+    if hasattr(model, "predict_proba"):
+
+        probabilities = model.predict_proba(
             input_scaled
-        )
-
-        predicted_label = label_encoder.inverse_transform(
-            prediction.astype(int)
         )[0]
 
-        st.success(
-            f"Predicted Obesity Level: **{predicted_label}**"
+        model_classes = np.asarray(
+            model.classes_
+        ).astype(int)
+
+        class_labels = label_encoder.inverse_transform(
+            model_classes
         )
 
-        if hasattr(model, "predict_proba"):
+        probability_df = pd.DataFrame(
+            {
+                "Obesity Level": [
+                    label.replace("_", " ")
+                    for label in class_labels
+                ],
+                "Probability (%)": (
+                    probabilities * 100
+                ).round(2)
+            }
+        ).sort_values(
+            "Probability (%)",
+            ascending=False
+        ).reset_index(drop=True)
 
-            probabilities = model.predict_proba(
-                input_scaled
-            )[0]
+        confidence = float(
+            probability_df.iloc[0]["Probability (%)"]
+        )
 
-            model_classes = np.asarray(
-                model.classes_
-            ).astype(int)
+    # ========================================================
+    # RESULT SECTION
+    # ========================================================
 
-            class_labels = (
-                label_encoder.inverse_transform(
-                    model_classes
-                )
+    st.divider()
+    st.subheader("Step 2 — Your Result")
+
+    result_left, result_right = st.columns(
+        [1.2, 1]
+    )
+
+    with result_left:
+
+        st.success(
+            f"## Predicted Obesity Level: {friendly_label}"
+        )
+
+        if confidence is not None:
+            st.metric(
+                "Model Confidence",
+                f"{confidence:.2f}%"
             )
 
-            probability_df = pd.DataFrame(
-                {
-                    "Obesity Level": class_labels,
-                    "Probability (%)": (
-                        probabilities * 100
-                    ).round(2)
-                }
-            ).sort_values(
+            st.caption(
+                "Model Confidence shows how strongly the model prefers "
+                "this class compared with the other possible classes."
+            )
+
+        st.caption(
+            "The result updates automatically whenever you change an input."
+        )
+
+    with result_right:
+
+        st.metric(
+            "BMI Reference",
+            f"{bmi:.2f}"
+        )
+
+        st.caption(
+            "BMI is displayed only as a reference. "
+            "The model uses all entered features, not BMI alone."
+        )
+
+    # --------------------------------------------------------
+    # TOP 3 PREDICTIONS
+    # --------------------------------------------------------
+
+    if probability_df is not None:
+
+        st.markdown("#### Top 3 Possible Classes")
+
+        top3 = probability_df.head(3)
+
+        st.dataframe(
+            top3,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        top3_chart = px.bar(
+            top3.sort_values(
                 "Probability (%)",
-                ascending=False
-            )
+                ascending=True
+            ),
+            x="Probability (%)",
+            y="Obesity Level",
+            orientation="h",
+            text="Probability (%)",
+            title="Top 3 Prediction Probabilities"
+        )
 
-            p1, p2 = st.columns(
-                [1, 2]
-            )
+        top3_chart.update_traces(
+            texttemplate="%{text:.2f}%",
+            textposition="outside"
+        )
 
-            with p1:
-                st.metric(
-                    "Highest Model Probability",
-                    f"{probability_df.iloc[0]['Probability (%)']:.2f}%"
-                )
+        top3_chart.update_layout(
+            xaxis_range=[0, 100],
+            height=320
+        )
 
-            with p2:
-                st.dataframe(
-                    probability_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+        st.plotly_chart(
+            top3_chart,
+            use_container_width=True
+        )
 
-            fig_prob, ax_prob = plt.subplots(
-                figsize=(9, 5)
-            )
+    # ========================================================
+    # OPTIONAL DETAILS
+    # ========================================================
 
-            sorted_prob = probability_df.sort_values(
-                "Probability (%)"
-            )
+    with st.expander(
+        "See Lifestyle Profile Summary"
+    ):
 
-            ax_prob.barh(
-                sorted_prob["Obesity Level"],
-                sorted_prob["Probability (%)"]
-            )
+        st.write(
+            """
+            This section shows the lifestyle values you entered in a simple
+            bar chart. Each bar is compared with the **maximum value available
+            for that feature**.
 
-            ax_prob.set_title(
-                "Prediction Probability by Class"
-            )
+            **Important:** A longer bar does not mean healthier. It only means
+            a higher input value.
+            """
+        )
 
-            ax_prob.set_xlabel(
-                "Probability (%)"
-            )
+        # Human-friendly labels
+        vegetable_level = {
+            1.0: "Low",
+            2.0: "Medium",
+            3.0: "High"
+        }[fcvc]
 
-            ax_prob.set_xlim(
-                0,
-                100
-            )
+        water_level = {
+            1.0: "Low",
+            2.0: "Medium",
+            3.0: "High"
+        }[ch2o]
 
-            fig_prob.tight_layout()
-            st.pyplot(fig_prob)
-            plt.close(fig_prob)
+        activity_level = {
+            0.0: "Very Low",
+            1.0: "Low",
+            2.0: "Moderate",
+            3.0: "High"
+        }[faf]
 
-        st.warning(
-            "This prediction is produced by a coursework machine-learning "
-            "model and should not be interpreted as a medical diagnosis."
+        technology_level = {
+            0.0: "Low",
+            1.0: "Medium",
+            2.0: "High"
+        }[tue]
+
+        lifestyle_df = pd.DataFrame(
+            {
+                "Lifestyle Feature": [
+                    "Vegetable Consumption",
+                    "Main Meals",
+                    "Water Intake",
+                    "Physical Activity",
+                    "Technology Usage"
+                ],
+                "Relative Level (%)": [
+                    (fcvc / 3.0) * 100,
+                    (ncp / 4.0) * 100,
+                    (ch2o / 3.0) * 100,
+                    (faf / 3.0) * 100,
+                    (tue / 2.0) * 100
+                ],
+                "Your Input": [
+                    f"{vegetable_level} ({fcvc:.0f}/3)",
+                    f"{int(ncp)} meals/day",
+                    f"{water_level} ({ch2o:.0f}/3)",
+                    f"{activity_level} ({faf:.0f}/3)",
+                    f"{technology_level} ({tue:.0f}/2)"
+                ]
+            }
+        )
+
+        # Easy-to-read horizontal bar chart
+        profile_fig = px.bar(
+            lifestyle_df,
+            x="Relative Level (%)",
+            y="Lifestyle Feature",
+            orientation="h",
+            text="Your Input",
+            title="Your Lifestyle Inputs"
+        )
+
+        profile_fig.update_traces(
+            textposition="outside"
+        )
+
+        profile_fig.update_layout(
+            xaxis=dict(
+                title="Relative Input Level (%)",
+                range=[0, 115]
+            ),
+            yaxis=dict(
+                title=""
+            ),
+            height=390,
+            margin=dict(
+                l=20,
+                r=130,
+                t=60,
+                b=40
+            ),
+            showlegend=False
+        )
+
+        st.plotly_chart(
+            profile_fig,
+            use_container_width=True
+        )
+
+        st.caption(
+            "Example: 100% means the highest selectable value for that "
+            "feature. It does not mean 100% healthy."
+        )
+
+        st.dataframe(
+            lifestyle_df[
+                [
+                    "Lifestyle Feature",
+                    "Your Input"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander(
+        "How the Model Processes Your Input"
+    ):
+
+        st.write(
+            """
+            The prediction follows four simple steps:
+
+            **1. User Input**  
+            The system receives the information entered above.
+
+            **2. Encoding**  
+            Text answers such as gender and transport type are converted
+            into numbers using the same one-hot encoding format used
+            during model training.
+
+            **3. Standardisation**  
+            The saved StandardScaler transforms the input into the same
+            scale used during training.
+
+            **4. Prediction**  
+            The trained Decision Tree model receives the processed input
+            and returns the predicted obesity level.
+            """
         )
 
         with st.expander(
-            "Show encoded model input"
+            "Show Encoded Input Values"
         ):
             st.dataframe(
                 input_encoded,
                 use_container_width=True
             )
 
-
-# ============================================================
-# CONCLUSION & LIMITATIONS
-# ============================================================
-
-elif page == "Conclusion & Limitations":
-
-    st.title("Conclusion & Limitations")
-
-    st.subheader("Key Findings")
-
-    st.write(
-        """
-        **Decision Tree** is the strongest of the three evaluated models,
-        achieving **89.20% Accuracy** and **85.58% Macro F1-Score**.
-        Logistic Regression and KNN provide lower overall performance on
-        the final prepared dataset.
-        """
-    )
-
-    st.subheader("Why Macro Metrics Matter")
-
-    st.write(
-        """
-        After data preparation, the class distribution is no longer
-        balanced. Macro Precision, Macro Recall and Macro F1 therefore
-        provide useful class-sensitive evaluation in addition to Accuracy.
-        """
-    )
-
-    st.subheader("Main Limitations")
-
-    limitations = pd.DataFrame(
-        {
-            "Limitation": [
-                "Large row reduction",
-                "Class imbalance after filtering",
-                "Small sample for Obesity_Type_II",
-                "Synthetic / interpolated observations",
-                "Single dataset",
-                "Educational prototype"
-            ],
-            "Impact": [
-                "Filtering may reduce representativeness and generalisability.",
-                "Overall Accuracy can hide weaker performance on smaller classes.",
-                "Performance estimates for this class may be unstable.",
-                "Generated observations may not fully reflect real-world behaviour.",
-                "External validity has not been tested on a separate population.",
-                "Predictions are not suitable for clinical diagnosis."
-            ]
-        }
-    )
-
-    st.dataframe(
-        limitations,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.subheader("Potential Improvements")
-
-    st.write(
-        """
-        Future work could evaluate alternative preprocessing strategies that
-        retain more records, collect more real-world observations, use an
-        independent external test dataset, and compare additional models
-        under the same cross-validation and evaluation framework.
-        """
-    )
-
-    st.success(
-        "Overall contribution: the prototype demonstrates an end-to-end "
-        "CRISP-DM-style workflow from data understanding and preparation "
-        "through modelling, evaluation and interactive prediction."
+    st.warning(
+        "This prediction is for educational purposes only and is not "
+        "a medical diagnosis."
     )
 
 
