@@ -1545,7 +1545,7 @@ feature_columns.pkl"""
 
     st.info(
         "⚡ **Automatic Prediction:** The result updates automatically "
-        "whenever you change any input above."
+        "whenever you change any information above."
     )
 
     input_scaled = scaler.transform(
