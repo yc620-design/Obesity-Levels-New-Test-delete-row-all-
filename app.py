@@ -1262,13 +1262,18 @@ elif page == "Model Evaluation":
 
 
 
+
 # ============================================================
 # LIVE PREDICTION
 # ============================================================
 
 elif page == "Live Prediction":
 
-    st.title("✨ Smart Prediction Studio")
+    st.title("🔍 Live Obesity Level Prediction")
+
+    # --------------------------------------------------------
+    # CHECK MODEL FILES
+    # --------------------------------------------------------
 
     if (
         model is None
@@ -1277,8 +1282,8 @@ elif page == "Live Prediction":
         or feature_columns is None
     ):
         st.error(
-            "Prediction files are missing. Add the following files "
-            "to the same folder as app.py:"
+            "Prediction files are missing. Please place these files "
+            "in the same folder as app.py:"
         )
 
         st.code(
@@ -1294,425 +1299,176 @@ feature_columns.pkl"""
 
         st.stop()
 
-    st.markdown(
+    st.info(
         """
-        This page works like an interactive **prediction studio**. Change the
-        profile inputs and the BMI gauge, lifestyle fingerprint, prediction
-        confidence and class probabilities update immediately.
+        **How to use this page**
+
+        1. Enter your personal information.
+        2. Choose your eating and lifestyle habits.
+        3. The prediction appears automatically — no button is needed.
         """
     )
 
-    live_mode = st.toggle(
-        "⚡ Live prediction mode",
-        value=True,
-        help=(
-            "When enabled, the model predicts automatically whenever "
-            "an input is changed."
+    # ========================================================
+    # INPUT SECTION
+    # ========================================================
+
+    st.subheader("Step 1 — Enter Your Information")
+
+    input_left, input_right = st.columns(2)
+
+    # --------------------------------------------------------
+    # PERSONAL INFORMATION
+    # --------------------------------------------------------
+
+    with input_left:
+
+        st.markdown("#### Personal Information")
+
+        gender = st.selectbox(
+            "Gender",
+            ["Female", "Male"]
         )
-    )
+
+        age = st.number_input(
+            "Age",
+            min_value=10.0,
+            max_value=100.0,
+            value=25.0,
+            step=1.0
+        )
+
+        height = st.number_input(
+            "Height (metres)",
+            min_value=1.20,
+            max_value=2.20,
+            value=1.70,
+            step=0.01
+        )
+
+        weight = st.number_input(
+            "Weight (kg)",
+            min_value=30.0,
+            max_value=250.0,
+            value=70.0,
+            step=1.0
+        )
+
+        family_history = st.selectbox(
+            "Family history of overweight?",
+            ["no", "yes"]
+        )
+
+        favc = st.selectbox(
+            "Do you often eat high-calorie food?",
+            ["no", "yes"]
+        )
+
+        smoke = st.selectbox(
+            "Do you smoke?",
+            ["no", "yes"]
+        )
+
+        scc = st.selectbox(
+            "Do you monitor your calorie intake?",
+            ["no", "yes"]
+        )
 
     # --------------------------------------------------------
-    # INPUT TABS
+    # EATING + LIFESTYLE
     # --------------------------------------------------------
 
-    tab1, tab2, tab3 = st.tabs(
-        [
-            "👤 Physical Profile",
-            "🍽️ Eating Habits",
-            "🏃 Lifestyle"
-        ]
-    )
+    with input_right:
 
-    with tab1:
-        c1, c2 = st.columns(2)
+        st.markdown("#### Eating Habits")
 
-        with c1:
-            gender = st.selectbox(
-                "Gender",
-                ["Female", "Male"]
+        fcvc = st.select_slider(
+            "Vegetable consumption",
+            options=[1.0, 2.0, 3.0],
+            value=2.0,
+            format_func=lambda x: {
+                1.0: "Low",
+                2.0: "Medium",
+                3.0: "High"
+            }[x]
+        )
+
+        ncp = st.select_slider(
+            "Main meals per day",
+            options=[1.0, 2.0, 3.0, 4.0],
+            value=3.0,
+            format_func=lambda x: (
+                f"{int(x)} meal"
+                if x == 1
+                else f"{int(x)} meals"
             )
+        )
 
-            age = st.number_input(
-                "Age",
-                min_value=10.0,
-                max_value=100.0,
-                value=25.0,
-                step=1.0
-            )
+        caec = st.selectbox(
+            "Eating between meals",
+            ["no", "Sometimes", "Frequently", "Always"],
+            format_func=lambda x: "Never" if x == "no" else x
+        )
 
-            height = st.number_input(
-                "Height (m)",
-                min_value=1.20,
-                max_value=2.20,
-                value=1.70,
-                step=0.01
-            )
+        ch2o = st.select_slider(
+            "Water intake",
+            options=[1.0, 2.0, 3.0],
+            value=2.0,
+            format_func=lambda x: {
+                1.0: "Low",
+                2.0: "Medium",
+                3.0: "High"
+            }[x]
+        )
 
-            weight = st.number_input(
-                "Weight (kg)",
-                min_value=30.0,
-                max_value=250.0,
-                value=70.0,
-                step=1.0
-            )
+        calc = st.selectbox(
+            "Alcohol consumption",
+            ["no", "Sometimes", "Frequently", "Always"],
+            format_func=lambda x: "Never" if x == "no" else x
+        )
 
-        with c2:
-            family_history = st.selectbox(
-                "Family history of overweight",
-                ["no", "yes"]
-            )
+        st.markdown("#### Lifestyle")
 
-            favc = st.selectbox(
-                "Frequent high-calorie food consumption (FAVC)",
-                ["no", "yes"]
-            )
+        faf = st.select_slider(
+            "Physical activity",
+            options=[0.0, 1.0, 2.0, 3.0],
+            value=1.0,
+            format_func=lambda x: {
+                0.0: "Very Low",
+                1.0: "Low",
+                2.0: "Moderate",
+                3.0: "High"
+            }[x]
+        )
 
-            smoke = st.selectbox(
-                "Smoking (SMOKE)",
-                ["no", "yes"]
-            )
+        tue = st.select_slider(
+            "Technology usage",
+            options=[0.0, 1.0, 2.0],
+            value=1.0,
+            format_func=lambda x: {
+                0.0: "Low",
+                1.0: "Medium",
+                2.0: "High"
+            }[x]
+        )
 
-            scc = st.selectbox(
-                "Calorie monitoring (SCC)",
-                ["no", "yes"]
-            )
+        mtrans = st.selectbox(
+            "Main transportation",
+            [
+                "Automobile",
+                "Bike",
+                "Motorbike",
+                "Public_Transportation",
+                "Walking"
+            ],
+            format_func=lambda x: x.replace("_", " ")
+        )
 
-    with tab2:
-        c3, c4 = st.columns(2)
-
-        with c3:
-            fcvc = st.slider(
-                "Vegetable consumption frequency (FCVC)",
-                min_value=1.0,
-                max_value=3.0,
-                value=2.0,
-                step=0.1
-            )
-
-            ncp = st.slider(
-                "Number of main meals (NCP)",
-                min_value=1.0,
-                max_value=4.0,
-                value=3.0,
-                step=0.1
-            )
-
-            caec = st.selectbox(
-                "Eating between meals (CAEC)",
-                [
-                    "no",
-                    "Sometimes",
-                    "Frequently",
-                    "Always"
-                ]
-            )
-
-        with c4:
-            ch2o = st.slider(
-                "Daily water consumption (CH2O)",
-                min_value=1.0,
-                max_value=3.0,
-                value=2.0,
-                step=0.1
-            )
-
-            calc = st.selectbox(
-                "Alcohol consumption (CALC)",
-                [
-                    "no",
-                    "Sometimes",
-                    "Frequently",
-                    "Always"
-                ]
-            )
-
-    with tab3:
-        c5, c6 = st.columns(2)
-
-        with c5:
-            faf = st.slider(
-                "Physical activity frequency (FAF)",
-                min_value=0.0,
-                max_value=3.0,
-                value=1.0,
-                step=0.1
-            )
-
-            tue = st.slider(
-                "Technology-use time (TUE)",
-                min_value=0.0,
-                max_value=2.0,
-                value=1.0,
-                step=0.1
-            )
-
-        with c6:
-            mtrans = st.selectbox(
-                "Main transportation (MTRANS)",
-                [
-                    "Automobile",
-                    "Bike",
-                    "Motorbike",
-                    "Public_Transportation",
-                    "Walking"
-                ]
-            )
+    # ========================================================
+    # PREPARE INPUT FOR MODEL
+    # ========================================================
 
     bmi = weight / (height ** 2)
-
-    # --------------------------------------------------------
-    # LIVE PROFILE DASHBOARD
-    # --------------------------------------------------------
-
-    st.divider()
-    st.subheader("📡 Live Profile Monitor")
-
-    monitor_left, monitor_right = st.columns(
-        [1, 1]
-    )
-
-    with monitor_left:
-        bmi_fig = go.Figure(
-            go.Indicator(
-                mode="gauge+number",
-                value=bmi,
-                number={
-                    "suffix": "",
-                    "valueformat": ".2f"
-                },
-                title={
-                    "text": "BMI Reference"
-                },
-                gauge={
-                    "axis": {
-                        "range": [10, 50]
-                    },
-                    "bar": {
-                        "thickness": 0.35
-                    }
-                }
-            )
-        )
-
-        bmi_fig.update_layout(
-            height=300,
-            margin=dict(
-                l=20,
-                r=20,
-                t=60,
-                b=20
-            )
-        )
-
-        st.plotly_chart(
-            bmi_fig,
-            use_container_width=True
-        )
-
-        st.caption(
-            "BMI is shown as a reference value only. "
-            "The prediction uses the trained model features."
-        )
-
-    with monitor_right:
-        radar_labels = [
-            "Vegetables",
-            "Main Meals",
-            "Water",
-            "Physical Activity",
-            "Technology Use"
-        ]
-
-        radar_values = [
-            ((fcvc - 1.0) / 2.0) * 100,
-            ((ncp - 1.0) / 3.0) * 100,
-            ((ch2o - 1.0) / 2.0) * 100,
-            (faf / 3.0) * 100,
-            (tue / 2.0) * 100
-        ]
-
-        radar_fig = go.Figure()
-
-        radar_fig.add_trace(
-            go.Scatterpolar(
-                r=radar_values + [radar_values[0]],
-                theta=radar_labels + [radar_labels[0]],
-                fill="toself",
-                name="Current Profile"
-            )
-        )
-
-        radar_fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100]
-                )
-            ),
-            showlegend=False,
-            height=300,
-            margin=dict(
-                l=35,
-                r=35,
-                t=45,
-                b=25
-            ),
-            title="Live Lifestyle Radar"
-        )
-
-        st.plotly_chart(
-            radar_fig,
-            use_container_width=True
-        )
-
-        st.caption(
-            "The radar shows the relative level of the five ordinal "
-            "survey inputs. It is not a health-risk score."
-        )
-
-    # --------------------------------------------------------
-    # INTERACTIVE PROFILE SIGNATURE
-    # --------------------------------------------------------
-
-    st.subheader("✨ Interactive Profile Signature")
-
-    st.write(
-        """
-        This visual summarises the current input profile in a more interactive
-        way. It updates immediately whenever the values change.
-        """
-    )
-
-    profile_left, profile_right = st.columns([1.1, 1])
-
-    with profile_left:
-        signature_labels = [
-            "Vegetables",
-            "Main Meals",
-            "Water",
-            "Physical Activity",
-            "Technology Use"
-        ]
-
-        signature_values = [
-            ((fcvc - 1.0) / 2.0) * 100,
-            ((ncp - 1.0) / 3.0) * 100,
-            ((ch2o - 1.0) / 2.0) * 100,
-            (faf / 3.0) * 100,
-            (tue / 2.0) * 100
-        ]
-
-        signature_fig = go.Figure()
-
-        signature_fig.add_trace(
-            go.Scatterpolar(
-                r=signature_values + [signature_values[0]],
-                theta=signature_labels + [signature_labels[0]],
-                fill="toself",
-                name="Current Profile"
-            )
-        )
-
-        signature_fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100]
-                )
-            ),
-            showlegend=False,
-            height=360,
-            margin=dict(
-                l=35,
-                r=35,
-                t=50,
-                b=25
-            ),
-            title="Lifestyle Profile Fingerprint"
-        )
-
-        st.plotly_chart(
-            signature_fig,
-            use_container_width=True
-        )
-
-    with profile_right:
-        st.markdown("#### Current Profile Snapshot")
-
-        snapshot_df = pd.DataFrame(
-            {
-                "Input": [
-                    "Age",
-                    "Height",
-                    "Weight",
-                    "BMI",
-                    "Vegetable Frequency",
-                    "Main Meals",
-                    "Water Intake",
-                    "Physical Activity",
-                    "Technology Use"
-                ],
-                "Value": [
-                    f"{age:.0f}",
-                    f"{height:.2f} m",
-                    f"{weight:.1f} kg",
-                    f"{bmi:.2f}",
-                    f"{fcvc:.1f} / 3",
-                    f"{ncp:.1f} / 4",
-                    f"{ch2o:.1f} / 3",
-                    f"{faf:.1f} / 3",
-                    f"{tue:.1f} / 2"
-                ]
-            }
-        )
-
-        st.dataframe(
-            snapshot_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        if raw_df is not None:
-            weight_percentile = (
-                (raw_df["Weight"] <= weight).mean()
-                * 100
-            )
-
-            activity_percentile = (
-                (raw_df["FAF"] <= faf).mean()
-                * 100
-            )
-
-            water_percentile = (
-                (raw_df["CH2O"] <= ch2o).mean()
-                * 100
-            )
-
-            p1, p2, p3 = st.columns(3)
-
-            p1.metric(
-                "Weight Position",
-                f"{weight_percentile:.0f}th pct."
-            )
-
-            p2.metric(
-                "Activity Position",
-                f"{activity_percentile:.0f}th pct."
-            )
-
-            p3.metric(
-                "Water Position",
-                f"{water_percentile:.0f}th pct."
-            )
-
-            st.caption(
-                "Percentiles only show where the current input sits "
-                "within this dataset. They are not health assessments."
-            )
-
-    # --------------------------------------------------------
-    # BUILD MODEL INPUT
-    # --------------------------------------------------------
 
     input_encoded = pd.DataFrame(
         0.0,
@@ -1720,6 +1476,7 @@ feature_columns.pkl"""
         columns=feature_columns
     )
 
+    # Numerical inputs
     numeric_values = {
         "Age": age,
         "Height": height,
@@ -1733,11 +1490,9 @@ feature_columns.pkl"""
 
     for column, value in numeric_values.items():
         if column in input_encoded.columns:
-            input_encoded.loc[
-                0,
-                column
-            ] = value
+            input_encoded.loc[0, column] = value
 
+    # Categorical inputs
     categorical_values = {
         "Gender": gender,
         "family_history_with_overweight": family_history,
@@ -1750,328 +1505,253 @@ feature_columns.pkl"""
     }
 
     for feature, value in categorical_values.items():
-        dummy_column = (
-            f"{feature}_{value}"
-        )
+        dummy_column = f"{feature}_{value}"
 
         if dummy_column in input_encoded.columns:
-            input_encoded.loc[
-                0,
-                dummy_column
-            ] = 1.0
+            input_encoded.loc[0, dummy_column] = 1.0
+
+    # ========================================================
+    # AUTOMATIC PREDICTION
+    # ========================================================
+
+    input_scaled = scaler.transform(
+        input_encoded
+    )
+
+    prediction = model.predict(
+        input_scaled
+    )
+
+    predicted_label = label_encoder.inverse_transform(
+        prediction.astype(int)
+    )[0]
+
+    friendly_label = predicted_label.replace(
+        "_",
+        " "
+    )
+
+    # Probability / confidence
+    probability_df = None
+    confidence = None
+
+    if hasattr(model, "predict_proba"):
+
+        probabilities = model.predict_proba(
+            input_scaled
+        )[0]
+
+        model_classes = np.asarray(
+            model.classes_
+        ).astype(int)
+
+        class_labels = label_encoder.inverse_transform(
+            model_classes
+        )
+
+        probability_df = pd.DataFrame(
+            {
+                "Obesity Level": [
+                    label.replace("_", " ")
+                    for label in class_labels
+                ],
+                "Probability (%)": (
+                    probabilities * 100
+                ).round(2)
+            }
+        ).sort_values(
+            "Probability (%)",
+            ascending=False
+        ).reset_index(drop=True)
+
+        confidence = float(
+            probability_df.iloc[0]["Probability (%)"]
+        )
+
+    # ========================================================
+    # RESULT SECTION
+    # ========================================================
+
+    st.divider()
+    st.subheader("Step 2 — Your Result")
+
+    result_left, result_right = st.columns(
+        [1.2, 1]
+    )
+
+    with result_left:
+
+        st.success(
+            f"## Predicted Obesity Level: {friendly_label}"
+        )
+
+        if confidence is not None:
+            st.metric(
+                "Model Confidence",
+                f"{confidence:.2f}%"
+            )
+
+            st.caption(
+                "Model Confidence shows how strongly the model prefers "
+                "this class compared with the other possible classes."
+            )
+
+        st.caption(
+            "The result updates automatically whenever you change an input."
+        )
+
+    with result_right:
+
+        st.metric(
+            "BMI Reference",
+            f"{bmi:.2f}"
+        )
+
+        st.caption(
+            "BMI is displayed only as a reference. "
+            "The model uses all entered features, not BMI alone."
+        )
 
     # --------------------------------------------------------
-    # LIVE / MANUAL PREDICTION CONTROL
+    # TOP 3 PREDICTIONS
     # --------------------------------------------------------
 
-    manual_predict = False
+    if probability_df is not None:
 
-    if not live_mode:
-        manual_predict = st.button(
-            "🚀 Run Prediction",
-            type="primary",
+        st.markdown("#### Top 3 Possible Classes")
+
+        top3 = probability_df.head(3)
+
+        st.dataframe(
+            top3,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        top3_chart = px.bar(
+            top3.sort_values(
+                "Probability (%)",
+                ascending=True
+            ),
+            x="Probability (%)",
+            y="Obesity Level",
+            orientation="h",
+            text="Probability (%)",
+            title="Top 3 Prediction Probabilities"
+        )
+
+        top3_chart.update_traces(
+            texttemplate="%{text:.2f}%",
+            textposition="outside"
+        )
+
+        top3_chart.update_layout(
+            xaxis_range=[0, 100],
+            height=320
+        )
+
+        st.plotly_chart(
+            top3_chart,
             use_container_width=True
         )
 
-    should_predict = (
-        live_mode
-        or manual_predict
-    )
+    # ========================================================
+    # OPTIONAL DETAILS
+    # ========================================================
 
-    if should_predict:
+    with st.expander(
+        "See Lifestyle Profile Chart"
+    ):
 
-        input_scaled = scaler.transform(
-            input_encoded
+        st.write(
+            """
+            This chart is only a visual summary of the lifestyle values
+            entered above. A larger value means a higher entered level for
+            that feature. It is **not** a health score.
+            """
         )
 
-        prediction = model.predict(
-            input_scaled
+        labels = [
+            "Vegetables",
+            "Meals",
+            "Water",
+            "Activity",
+            "Technology"
+        ]
+
+        values = [
+            ((fcvc - 1.0) / 2.0) * 100,
+            ((ncp - 1.0) / 3.0) * 100,
+            ((ch2o - 1.0) / 2.0) * 100,
+            (faf / 3.0) * 100,
+            (tue / 2.0) * 100
+        ]
+
+        radar_fig = go.Figure()
+
+        radar_fig.add_trace(
+            go.Scatterpolar(
+                r=values + [values[0]],
+                theta=labels + [labels[0]],
+                fill="toself",
+                name="Current Profile"
+            )
         )
 
-        predicted_label = label_encoder.inverse_transform(
-            prediction.astype(int)
-        )[0]
-
-        previous_prediction = st.session_state.get(
-            "previous_prediction"
-        )
-
-        st.session_state["previous_prediction"] = (
-            predicted_label
-        )
-
-        probabilities = None
-        probability_df = None
-
-        if hasattr(model, "predict_proba"):
-
-            probabilities = model.predict_proba(
-                input_scaled
-            )[0]
-
-            model_classes = np.asarray(
-                model.classes_
-            ).astype(int)
-
-            class_labels = (
-                label_encoder.inverse_transform(
-                    model_classes
+        radar_fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100]
                 )
-            )
-
-            probability_df = pd.DataFrame(
-                {
-                    "Obesity Level": class_labels,
-                    "Probability (%)": (
-                        probabilities * 100
-                    ).round(2)
-                }
-            ).sort_values(
-                "Probability (%)",
-                ascending=False
-            ).reset_index(drop=True)
-
-        # ----------------------------------------------------
-        # RESULT HERO
-        # ----------------------------------------------------
-
-        st.divider()
-        st.subheader("🎯 Live Prediction Result")
-
-        result_left, result_right = st.columns(
-            [1.2, 1]
+            ),
+            showlegend=False,
+            height=350
         )
 
-        with result_left:
-
-            st.markdown(
-                f"""
-                <div style="
-                    padding:28px;
-                    border-radius:18px;
-                    border:1px solid rgba(128,128,128,0.30);
-                    text-align:center;
-                ">
-                    <div style="
-                        font-size:0.95rem;
-                        opacity:0.72;
-                        margin-bottom:8px;
-                    ">
-                        Predicted Obesity Level
-                    </div>
-                    <div style="
-                        font-size:2.1rem;
-                        font-weight:750;
-                        line-height:1.15;
-                        word-break:break-word;
-                    ">
-                        {predicted_label}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            if probability_df is not None:
-                confidence = float(
-                    probability_df.iloc[0][
-                        "Probability (%)"
-                    ]
-                )
-
-                st.metric(
-                    "Model Confidence",
-                    f"{confidence:.2f}%"
-                )
-
-                st.progress(
-                    min(
-                        int(round(confidence)),
-                        100
-                    )
-                )
-
-        with result_right:
-
-            st.markdown("#### Current Profile")
-
-            profile_table = pd.DataFrame(
-                {
-                    "Attribute": [
-                        "Age",
-                        "Gender",
-                        "Height",
-                        "Weight",
-                        "BMI",
-                        "Physical Activity",
-                        "Technology Use",
-                        "Transport"
-                    ],
-                    "Current Value": [
-                        f"{age:.0f}",
-                        gender,
-                        f"{height:.2f} m",
-                        f"{weight:.1f} kg",
-                        f"{bmi:.2f}",
-                        f"{faf:.1f} / 3",
-                        f"{tue:.1f} / 2",
-                        mtrans
-                    ]
-                }
-            )
-
-            st.dataframe(
-                profile_table,
-                use_container_width=True,
-                hide_index=True
-            )
-
-        if previous_prediction is not None:
-            if previous_prediction != predicted_label:
-                st.info(
-                    f"🔄 Prediction changed from **{previous_prediction}** "
-                    f"to **{predicted_label}** after the latest input change."
-                )
-            else:
-                st.caption(
-                    f"Prediction remains **{predicted_label}** after the "
-                    "latest input change."
-                )
-
-        # ----------------------------------------------------
-        # PROBABILITY DASHBOARD
-        # ----------------------------------------------------
-
-        if probability_df is not None:
-
-            st.subheader("📊 Probability Dashboard")
-
-            top3 = probability_df.head(3)
-
-            ctop1, ctop2, ctop3 = st.columns(3)
-
-            top_cols = [
-                ctop1,
-                ctop2,
-                ctop3
-            ]
-
-            for idx, col in enumerate(top_cols):
-                if idx < len(top3):
-                    with col:
-                        st.metric(
-                            f"#{idx + 1} "
-                            f"{top3.iloc[idx]['Obesity Level']}",
-                            f"{top3.iloc[idx]['Probability (%)']:.2f}%"
-                        )
-
-            confidence_value = float(
-                probability_df.iloc[0]["Probability (%)"]
-            )
-
-            confidence_fig = go.Figure(
-                go.Indicator(
-                    mode="gauge+number",
-                    value=confidence_value,
-                    number={
-                        "suffix": "%",
-                        "valueformat": ".2f"
-                    },
-                    title={
-                        "text": "Prediction Confidence"
-                    },
-                    gauge={
-                        "axis": {
-                            "range": [0, 100]
-                        },
-                        "bar": {
-                            "thickness": 0.35
-                        }
-                    }
-                )
-            )
-
-            confidence_fig.update_layout(
-                height=280,
-                margin=dict(
-                    l=20,
-                    r=20,
-                    t=60,
-                    b=20
-                )
-            )
-
-            st.plotly_chart(
-                confidence_fig,
-                use_container_width=True
-            )
-
-            prob_fig = px.bar(
-                probability_df.sort_values(
-                    "Probability (%)",
-                    ascending=True
-                ),
-                x="Probability (%)",
-                y="Obesity Level",
-                orientation="h",
-                text="Probability (%)",
-                title="Prediction Probability by Class"
-            )
-
-            prob_fig.update_traces(
-                texttemplate="%{text:.2f}%",
-                textposition="outside"
-            )
-
-            prob_fig.update_layout(
-                xaxis_range=[0, 100],
-                height=430
-            )
-
-            st.plotly_chart(
-                prob_fig,
-                use_container_width=True
-            )
-
-        # ----------------------------------------------------
-        # MODEL PIPELINE TRACE
-        # ----------------------------------------------------
-
-        st.subheader("🔄 Prediction Pipeline")
-
-        step1, step2, step3, step4 = st.columns(4)
-
-        step1.info(
-            "**1. Input**\n\n"
-            "Physical, eating and lifestyle values"
+        st.plotly_chart(
+            radar_fig,
+            use_container_width=True
         )
 
-        step2.info(
-            "**2. Encoding**\n\n"
-            "Convert categories into model features"
-        )
+    with st.expander(
+        "How the Model Processes Your Input"
+    ):
 
-        step3.info(
-            "**3. Scaling**\n\n"
-            "Apply the saved StandardScaler"
-        )
+        st.write(
+            """
+            The prediction follows four simple steps:
 
-        step4.success(
-            f"**4. Prediction**\n\n{predicted_label}"
-        )
+            **1. User Input**  
+            The system receives the information entered above.
 
-        st.warning(
-            "This is an educational machine-learning prediction and "
-            "must not be interpreted as a medical diagnosis."
+            **2. Encoding**  
+            Text answers such as gender and transport type are converted
+            into numbers using the same one-hot encoding format used
+            during model training.
+
+            **3. Standardisation**  
+            The saved StandardScaler transforms the input into the same
+            scale used during training.
+
+            **4. Prediction**  
+            The trained Decision Tree model receives the processed input
+            and returns the predicted obesity level.
+            """
         )
 
         with st.expander(
-            "🔧 Technical View: Encoded Model Input"
+            "Show Encoded Input Values"
         ):
             st.dataframe(
                 input_encoded,
                 use_container_width=True
             )
+
+    st.warning(
+        "This prediction is for educational purposes only and is not "
+        "a medical diagnosis."
+    )
 
 
 # ============================================================
