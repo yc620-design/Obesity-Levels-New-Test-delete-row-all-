@@ -482,57 +482,41 @@ elif page == "Data Analysis":
         "NObeyesdad obesity-level class."
     )
 
-    # --------------------------------------------------------
+ # --------------------------------------------------------
     # GRAPH 2 — NUMBER OF PEOPLE IN EACH OBESITY LEVEL
+    # Follows the notebook coding part
     # --------------------------------------------------------
 
     st.subheader(
         "2. Number of People in Each Obesity Level"
     )
 
-    obesity_counts = (
-        obe["NObeyesdad"]
-        .value_counts()
-        .reset_index()
-    )
-
-    obesity_counts.columns = [
-        "Obesity Level",
-        "Number of People"
-    ]
-
     fig2, ax2 = plt.subplots(
-        figsize=(11, 6)
+        figsize=(10, 6)
     )
 
-    sns.barplot(
-        data=obesity_counts,
-        x="Obesity Level",
-        y="Number of People",
+    sns.countplot(
+        y=obe["NObeyesdad"],
+        hue=obe["NObeyesdad"],
+        order=obe["NObeyesdad"].value_counts().index,
+        palette="Set2",
+        legend=False,
         ax=ax2
     )
 
-    ax2.set_title(
-        "Number of People in Each Obesity Level",
-        fontsize=14,
-        fontweight="bold"
-    )
-
     ax2.set_xlabel(
-        "Obesity Level",
-        fontsize=12
+        "Count"
     )
 
     ax2.set_ylabel(
-        "Number of People",
-        fontsize=12
+        "Obesity Level"
     )
 
-    ax2.tick_params(
-        axis="x",
-        rotation=35
+    ax2.set_title(
+        "Number of People in Each Obesity Level"
     )
 
+    # Add count labels while preserving the notebook chart structure
     for container in ax2.containers:
         ax2.bar_label(
             container,
@@ -551,11 +535,9 @@ elif page == "Data Analysis":
     )
 
     st.caption(
-        "This graph shows how many individuals belong to each "
-        "obesity-level category in the dataset."
+        "This graph follows the notebook countplot and orders the obesity "
+        "levels from the largest number of people to the smallest."
     )
-
-
 
     # --------------------------------------------------------
     # GRAPH 3 — FAF VS TUE
