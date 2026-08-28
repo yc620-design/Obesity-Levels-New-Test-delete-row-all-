@@ -1268,7 +1268,7 @@ elif page == "Model Evaluation":
 
 elif page == "Live Prediction":
 
-    st.title("✨ Smart Live Prediction")
+    st.title("✨ Smart Prediction Studio")
 
     if (
         model is None
@@ -1296,9 +1296,9 @@ feature_columns.pkl"""
 
     st.markdown(
         """
-        This page works like a **live dashboard**: change the profile inputs
-        and the BMI gauge, lifestyle radar, dataset-position map and model
-        prediction update immediately.
+        This page works like an interactive **prediction studio**. Change the
+        profile inputs and the BMI gauge, lifestyle fingerprint, prediction
+        confidence and class probabilities update immediately.
         """
     )
 
@@ -1571,90 +1571,111 @@ feature_columns.pkl"""
         )
 
     # --------------------------------------------------------
-    # GPS-STYLE LIVE PROFILE MAP
+    # INTERACTIVE PROFILE SIGNATURE
     # --------------------------------------------------------
 
-    st.subheader("🗺️ GPS-Style Live Profile Map")
+    st.subheader("✨ Interactive Profile Signature")
 
     st.write(
         """
-        The dataset does not contain real GPS coordinates, so this is a
-        **profile map instead of a geographic map**. Like a GPS interface,
-        it shows your current position relative to other records and updates
-        when the input values change.
+        This visual summarises the current input profile in a more interactive
+        way. It updates immediately whenever the values change.
         """
     )
 
-    if raw_df is not None:
+    profile_left, profile_right = st.columns([1.1, 1])
 
-        map_tab1, map_tab2, map_tab3 = st.tabs(
-            [
-                "📍 2D Live Map",
-                "🌐 3D Profile Map",
-                "👥 Nearby Profiles"
-            ]
+    with profile_left:
+        signature_labels = [
+            "Vegetables",
+            "Main Meals",
+            "Water",
+            "Physical Activity",
+            "Technology Use"
+        ]
+
+        signature_values = [
+            ((fcvc - 1.0) / 2.0) * 100,
+            ((ncp - 1.0) / 3.0) * 100,
+            ((ch2o - 1.0) / 2.0) * 100,
+            (faf / 3.0) * 100,
+            (tue / 2.0) * 100
+        ]
+
+        signature_fig = go.Figure()
+
+        signature_fig.add_trace(
+            go.Scatterpolar(
+                r=signature_values + [signature_values[0]],
+                theta=signature_labels + [signature_labels[0]],
+                fill="toself",
+                name="Current Profile"
+            )
         )
 
-        # ----------------------------------------------------
-        # TAB 1 — 2D LIVE MAP
-        # ----------------------------------------------------
+        signature_fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100]
+                )
+            ),
+            showlegend=False,
+            height=360,
+            margin=dict(
+                l=35,
+                r=35,
+                t=50,
+                b=25
+            ),
+            title="Lifestyle Profile Fingerprint"
+        )
 
-        with map_tab1:
+        st.plotly_chart(
+            signature_fig,
+            use_container_width=True
+        )
 
-            map_fig = px.scatter(
-                raw_df,
-                x="FAF",
-                y="TUE",
-                color="NObeyesdad",
-                hover_data=[
+    with profile_right:
+        st.markdown("#### Current Profile Snapshot")
+
+        snapshot_df = pd.DataFrame(
+            {
+                "Input": [
                     "Age",
                     "Height",
                     "Weight",
-                    "FCVC",
-                    "CH2O"
+                    "BMI",
+                    "Vegetable Frequency",
+                    "Main Meals",
+                    "Water Intake",
+                    "Physical Activity",
+                    "Technology Use"
                 ],
-                labels={
-                    "FAF": "Physical Activity Frequency (FAF)",
-                    "TUE": "Technology Use (TUE)",
-                    "NObeyesdad": "Obesity Level"
-                },
-                title="Live Position: Physical Activity vs Technology Use"
-            )
+                "Value": [
+                    f"{age:.0f}",
+                    f"{height:.2f} m",
+                    f"{weight:.1f} kg",
+                    f"{bmi:.2f}",
+                    f"{fcvc:.1f} / 3",
+                    f"{ncp:.1f} / 4",
+                    f"{ch2o:.1f} / 3",
+                    f"{faf:.1f} / 3",
+                    f"{tue:.1f} / 2"
+                ]
+            }
+        )
 
-            map_fig.update_traces(
-                marker=dict(
-                    size=8,
-                    opacity=0.55
-                )
-            )
+        st.dataframe(
+            snapshot_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
-            map_fig.add_trace(
-                go.Scatter(
-                    x=[faf],
-                    y=[tue],
-                    mode="markers+text",
-                    name="Current Profile",
-                    text=["YOU"],
-                    textposition="top center",
-                    marker=dict(
-                        size=24,
-                        symbol="star",
-                        line=dict(
-                            width=2
-                        )
-                    )
-                )
-            )
-
-            map_fig.update_layout(
-                height=520,
-                legend_title_text="Obesity Level",
-                hovermode="closest"
-            )
-
-            st.plotly_chart(
-                map_fig,
-                use_container_width=True
+        if raw_df is not None:
+            weight_percentile = (
+                (raw_df["Weight"] <= weight).mean()
+                * 100
             )
 
             activity_percentile = (
@@ -1667,251 +1688,27 @@ feature_columns.pkl"""
                 * 100
             )
 
-            weight_percentile = (
-                (raw_df["Weight"] <= weight).mean()
-                * 100
-            )
-
             p1, p2, p3 = st.columns(3)
 
             p1.metric(
-                "Physical Activity Position",
-                f"{activity_percentile:.1f} percentile"
+                "Weight Position",
+                f"{weight_percentile:.0f}th pct."
             )
 
             p2.metric(
-                "Water Intake Position",
-                f"{water_percentile:.1f} percentile"
+                "Activity Position",
+                f"{activity_percentile:.0f}th pct."
             )
 
             p3.metric(
-                "Weight Position",
-                f"{weight_percentile:.1f} percentile"
-            )
-
-        # ----------------------------------------------------
-        # TAB 2 — 3D PROFILE MAP
-        # ----------------------------------------------------
-
-        with map_tab2:
-
-            st.caption(
-                "Rotate, zoom and pan the 3D map. The star represents "
-                "the current input."
-            )
-
-            map_3d = px.scatter_3d(
-                raw_df,
-                x="Height",
-                y="Weight",
-                z="FAF",
-                color="NObeyesdad",
-                opacity=0.45,
-                hover_data=[
-                    "Age",
-                    "TUE",
-                    "CH2O"
-                ],
-                labels={
-                    "NObeyesdad": "Obesity Level"
-                },
-                title="3D Live Profile Position"
-            )
-
-            map_3d.update_traces(
-                marker=dict(
-                    size=4
-                )
-            )
-
-            map_3d.add_trace(
-                go.Scatter3d(
-                    x=[height],
-                    y=[weight],
-                    z=[faf],
-                    mode="markers+text",
-                    name="Current Profile",
-                    text=["YOU"],
-                    textposition="top center",
-                    marker=dict(
-                        size=10,
-                        symbol="diamond",
-                        line=dict(
-                            width=2
-                        )
-                    )
-                )
-            )
-
-            map_3d.update_layout(
-                height=650,
-                scene=dict(
-                    xaxis_title="Height (m)",
-                    yaxis_title="Weight (kg)",
-                    zaxis_title="Physical Activity (FAF)"
-                )
-            )
-
-            st.plotly_chart(
-                map_3d,
-                use_container_width=True
-            )
-
-        # ----------------------------------------------------
-        # TAB 3 — NEARBY / SIMILAR PROFILES
-        # ----------------------------------------------------
-
-        with map_tab3:
-
-            st.write(
-                """
-                This section finds records with the most similar profile
-                values. It is only a **dataset similarity view** and is not
-                used to make the machine-learning prediction.
-                """
-            )
-
-            similarity_features = [
-                "Age",
-                "Height",
-                "Weight",
-                "FCVC",
-                "NCP",
-                "CH2O",
-                "FAF",
-                "TUE"
-            ]
-
-            current_values = np.array([
-                age,
-                height,
-                weight,
-                fcvc,
-                ncp,
-                ch2o,
-                faf,
-                tue
-            ], dtype=float)
-
-            similarity_data = (
-                raw_df[
-                    similarity_features
-                    + ["NObeyesdad"]
-                ]
-                .copy()
-            )
-
-            numeric_matrix = (
-                similarity_data[
-                    similarity_features
-                ]
-                .astype(float)
-            )
-
-            ranges = (
-                numeric_matrix.max()
-                - numeric_matrix.min()
-            ).replace(0, 1)
-
-            normalized_matrix = (
-                (numeric_matrix - numeric_matrix.min())
-                / ranges
-            )
-
-            normalized_current = (
-                (
-                    pd.Series(
-                        current_values,
-                        index=similarity_features
-                    )
-                    - numeric_matrix.min()
-                )
-                / ranges
-            )
-
-            distances = np.sqrt(
-                (
-                    (
-                        normalized_matrix
-                        - normalized_current
-                    ) ** 2
-                ).sum(axis=1)
-            )
-
-            nearby = (
-                similarity_data
-                .assign(
-                    Similarity_Distance=distances
-                )
-                .nsmallest(
-                    5,
-                    "Similarity_Distance"
-                )
-                .copy()
-            )
-
-            nearby["Similarity Score (%)"] = (
-                100
-                / (
-                    1
-                    + nearby["Similarity_Distance"]
-                )
-            ).round(2)
-
-            nearby = nearby[
-                [
-                    "NObeyesdad",
-                    "Age",
-                    "Height",
-                    "Weight",
-                    "FAF",
-                    "TUE",
-                    "Similarity Score (%)"
-                ]
-            ].rename(
-                columns={
-                    "NObeyesdad": "Obesity Level"
-                }
-            )
-
-            st.dataframe(
-                nearby,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            nearest_class = (
-                nearby.iloc[0]["Obesity Level"]
-            )
-
-            nearest_score = (
-                nearby.iloc[0][
-                    "Similarity Score (%)"
-                ]
-            )
-
-            n1, n2 = st.columns(2)
-
-            n1.metric(
-                "Closest Dataset Profile",
-                nearest_class
-            )
-
-            n2.metric(
-                "Similarity Score",
-                f"{nearest_score:.2f}%"
+                "Water Position",
+                f"{water_percentile:.0f}th pct."
             )
 
             st.caption(
-                "Similarity is based on normalized Euclidean distance "
-                "across eight profile variables. It is separate from "
-                "the trained classifier."
+                "Percentiles only show where the current input sits "
+                "within this dataset. They are not health assessments."
             )
-
-    else:
-        st.info(
-            "Upload the original CSV to enable the GPS-style live profile map."
-        )
 
     # --------------------------------------------------------
     # BUILD MODEL INPUT
@@ -1994,6 +1791,14 @@ feature_columns.pkl"""
         predicted_label = label_encoder.inverse_transform(
             prediction.astype(int)
         )[0]
+
+        previous_prediction = st.session_state.get(
+            "previous_prediction"
+        )
+
+        st.session_state["previous_prediction"] = (
+            predicted_label
+        )
 
         probabilities = None
         probability_df = None
@@ -2121,6 +1926,18 @@ feature_columns.pkl"""
                 hide_index=True
             )
 
+        if previous_prediction is not None:
+            if previous_prediction != predicted_label:
+                st.info(
+                    f"🔄 Prediction changed from **{previous_prediction}** "
+                    f"to **{predicted_label}** after the latest input change."
+                )
+            else:
+                st.caption(
+                    f"Prediction remains **{predicted_label}** after the "
+                    "latest input change."
+                )
+
         # ----------------------------------------------------
         # PROBABILITY DASHBOARD
         # ----------------------------------------------------
@@ -2147,6 +1964,47 @@ feature_columns.pkl"""
                             f"{top3.iloc[idx]['Obesity Level']}",
                             f"{top3.iloc[idx]['Probability (%)']:.2f}%"
                         )
+
+            confidence_value = float(
+                probability_df.iloc[0]["Probability (%)"]
+            )
+
+            confidence_fig = go.Figure(
+                go.Indicator(
+                    mode="gauge+number",
+                    value=confidence_value,
+                    number={
+                        "suffix": "%",
+                        "valueformat": ".2f"
+                    },
+                    title={
+                        "text": "Prediction Confidence"
+                    },
+                    gauge={
+                        "axis": {
+                            "range": [0, 100]
+                        },
+                        "bar": {
+                            "thickness": 0.35
+                        }
+                    }
+                )
+            )
+
+            confidence_fig.update_layout(
+                height=280,
+                margin=dict(
+                    l=20,
+                    r=20,
+                    t=60,
+                    b=20
+                )
+            )
+
+            st.plotly_chart(
+                confidence_fig,
+                use_container_width=True
+            )
 
             prob_fig = px.bar(
                 probability_df.sort_values(
