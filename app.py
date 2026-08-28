@@ -2,9 +2,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import joblib
 from pathlib import Path
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    ConfusionMatrixDisplay
+)
+from sklearn.model_selection import train_test_split
+
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -18,9 +27,101 @@ st.set_page_config(
 
 BASE_DIR = Path(__file__).resolve().parent
 
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 1.6rem;
+            padding-bottom: 2rem;
+        }
+        h1, h2, h3 {
+            letter-spacing: -0.02em;
+        }
+        [data-testid="stMetric"] {
+            border: 1px solid rgba(128,128,128,0.25);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .small-note {
+            font-size: 0.92rem;
+            opacity: 0.82;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # ============================================================
-# LOAD MODEL FILES
+# CONSTANTS FROM FINAL NOTEBOOK
 # ============================================================
+
+NOTEBOOK_RESULTS = pd.DataFrame(
+    {
+        "Model": [
+            "Decision Tree",
+            "Logistic Regression",
+            "K-Nearest Neighbors"
+        ],
+        "Accuracy": [
+            89.2045,
+            81.2500,
+            78.9773
+        ],
+        "Macro Precision": [
+            90.4424,
+            74.3214,
+            75.6639
+        ],
+        "Macro Recall": [
+            83.3784,
+            72.2707,
+            70.7920
+        ],
+        "Macro F1-Score": [
+            85.5800,
+            72.7197,
+            72.3218
+        ]
+    }
+)
+
+CLASS_ORDER = [
+    "Insufficient_Weight",
+    "Normal_Weight",
+    "Obesity_Type_I",
+    "Obesity_Type_II",
+    "Obesity_Type_III",
+    "Overweight_Level_I",
+    "Overweight_Level_II"
+]
+
+ORDINAL_FEATURES = [
+    "FCVC",
+    "NCP",
+    "CH2O",
+    "FAF",
+    "TUE"
+]
+
+
+# ============================================================
+# LOAD DATA / MODEL FILES
+# ============================================================
+
+@st.cache_data
+def load_raw_dataset():
+    candidates = [
+        BASE_DIR / "ObesityDataSet_raw_and_data_sinthetic.csv",
+        BASE_DIR / "ObesityDataSet_raw_and_data_sinthetic(1).csv"
+    ]
+
+    for path in candidates:
+        if path.exists():
+            return pd.read_csv(path), path.name
+
+    return None, None
+
 
 @st.cache_resource
 def load_model_files():
@@ -28,8 +129,11 @@ def load_model_files():
     scaler = joblib.load(BASE_DIR / "scaler.pkl")
     label_encoder = joblib.load(BASE_DIR / "label_encoder.pkl")
     feature_columns = joblib.load(BASE_DIR / "feature_columns.pkl")
+
     return model, scaler, label_encoder, feature_columns
 
+
+raw_df, dataset_name = load_raw_dataset()
 
 model = None
 scaler = None
@@ -39,59 +143,182 @@ model_error = None
 
 try:
     model, scaler, label_encoder, feature_columns = load_model_files()
-except Exception as e:
-    model_error = str(e)
+except Exception as exc:
+    model_error = str(exc)
 
 
 # ============================================================
-# LOAD ORIGINAL DATASET FOR DATA ANALYSIS
+# DATA PREPARATION — MATCHES FINAL NOTEBOOK
 # ============================================================
 
 @st.cache_data
-def load_dataset():
-    possible_files = [
-        BASE_DIR / "ObesityDataSet_raw_and_data_sinthetic.csv",
-        BASE_DIR / "ObesityDataSet_raw_and_data_sinthetic(1).csv"
-    ]
+def prepare_dataset(df):
+    work = df.copy()
 
-    for file_path in possible_files:
-        if file_path.exists():
-            return pd.read_csv(file_path), file_path.name
+    original_rows = len(work)
+    missing_values = int(work.isnull().sum().sum())
+    duplicate_rows = int(work.duplicated().sum())
 
-    return None, None
+    work = (
+        work
+        .drop_duplicates()
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    after_duplicates = len(work)
+
+    invalid_mask = (
+        (work["Age"] <= 0)
+        | (work["Height"] <= 0)
+        | (work["Weight"] <= 0)
+    )
+
+    invalid_rows = int(invalid_mask.sum())
+
+    work = (
+        work.loc[~invalid_mask]
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    interpolation_count = np.zeros(
+        len(work),
+        dtype=int
+    )
+
+    for column in ORDINAL_FEATURES:
+        is_interpolated = ~np.isclose(
+            work[column],
+            np.round(work[column])
+        )
+
+        interpolation_count += (
+            is_interpolated.astype(int)
+        )
+
+    work["Interpolated_Count"] = interpolation_count
+
+    rows_removed_by_rule = int(
+        (work["Interpolated_Count"] >= 3).sum()
+    )
+
+    work = (
+        work.loc[
+            work["Interpolated_Count"] < 3
+        ]
+        .drop(columns=["Interpolated_Count"])
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    stats = {
+        "original_rows": original_rows,
+        "missing_values": missing_values,
+        "duplicate_rows": duplicate_rows,
+        "after_duplicates": after_duplicates,
+        "invalid_rows": invalid_rows,
+        "rows_removed_by_rule": rows_removed_by_rule,
+        "final_rows": len(work)
+    }
+
+    return work, stats
 
 
-obe, dataset_filename = load_dataset()
+if raw_df is not None:
+    cleaned_df, cleaning_stats = prepare_dataset(raw_df)
+else:
+    cleaned_df = None
+    cleaning_stats = None
 
 
 # ============================================================
-# SIDEBAR NAVIGATION
+# RECREATE FINAL TEST SET FOR BEST-MODEL EVALUATION
 # ============================================================
 
-st.sidebar.title("Obesity Classification")
+def recreate_test_set(clean_df):
+    if (
+        clean_df is None
+        or label_encoder is None
+        or feature_columns is None
+        or scaler is None
+    ):
+        return None, None
+
+    temp = clean_df.copy()
+
+    y = label_encoder.transform(
+        temp["NObeyesdad"]
+    )
+
+    X = temp.drop(
+        columns=["NObeyesdad"]
+    )
+
+    X_encoded = pd.get_dummies(
+        X,
+        drop_first=True,
+        dtype=int
+    )
+
+    X_encoded = X_encoded.reindex(
+        columns=feature_columns,
+        fill_value=0
+    )
+
+    _, X_test, _, y_test = train_test_split(
+        X_encoded,
+        y,
+        test_size=0.20,
+        random_state=42,
+        stratify=y
+    )
+
+    X_test_scaled = scaler.transform(
+        X_test
+    )
+
+    return X_test_scaled, y_test
+
+
+def percent(value):
+    return f"{value:.2f}%"
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.title("📊 Obesity Classification")
 
 page = st.sidebar.radio(
-    "Presentation Navigation",
+    "Navigation",
     [
         "Project Overview",
+        "Data Understanding",
         "Data Analysis",
         "Data Preparation",
-        "Model Comparison",
-        "Live Prediction"
+        "Model Evaluation",
+        "Live Prediction",
+        "Conclusion & Limitations"
     ]
 )
 
 st.sidebar.divider()
 
-if model is not None:
-    st.sidebar.caption(
-        f"Loaded model: {type(model).__name__}"
+if raw_df is not None:
+    st.sidebar.success(
+        f"Dataset loaded: {len(raw_df):,} rows"
     )
 else:
-    st.sidebar.warning(
-        "Model files are not loaded. "
-        "Data Analysis can still be viewed if the CSV is available."
+    st.sidebar.error("Dataset CSV not found")
+
+if model is not None:
+    st.sidebar.success(
+        f"Model loaded: {type(model).__name__}"
     )
+else:
+    st.sidebar.warning("Prediction model not loaded")
 
 
 # ============================================================
@@ -100,66 +327,57 @@ else:
 
 if page == "Project Overview":
 
-    st.title("📊 Obesity Level Classification")
+    st.title("Obesity Level Classification")
 
     st.write(
         """
-        This project applies machine learning techniques to classify
-        individuals into seven obesity levels using physical, dietary,
-        and lifestyle attributes.
+        This project applies supervised machine learning to classify
+        individuals into seven obesity-level categories using physical,
+        dietary and lifestyle attributes.
         """
     )
 
     st.info(
-        "Three machine learning models are compared: Decision Tree, "
-        "Logistic Regression, and K-Nearest Neighbors."
+        "The prototype follows the final notebook pipeline and compares "
+        "Decision Tree, Logistic Regression and K-Nearest Neighbors."
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    col1.metric("Original Records", "2,111")
-    col2.metric("After Data Preparation", "877")
-    col3.metric("Encoded Features", "23")
-    col4.metric("Target Classes", "7")
-
-    st.subheader("Class Distribution After Data Preparation")
-
-    class_df = pd.DataFrame(
-        {
-            "Obesity Level": [
-                "Normal_Weight",
-                "Obesity_Type_I",
-                "Overweight_Level_II",
-                "Overweight_Level_I",
-                "Insufficient_Weight",
-                "Obesity_Type_III",
-                "Obesity_Type_II"
-            ],
-            "Records": [
-                282,
-                152,
-                124,
-                102,
-                101,
-                98,
-                18
-            ]
-        }
+    c1.metric(
+        "Original Records",
+        f"{len(raw_df):,}" if raw_df is not None else "2,111"
     )
 
-    st.dataframe(
-        class_df,
-        use_container_width=True,
-        hide_index=True
+    c2.metric(
+        "Final Records",
+        f"{len(cleaned_df):,}" if cleaned_df is not None else "877"
     )
 
-    st.bar_chart(
-        class_df.set_index("Obesity Level")["Records"]
+    c3.metric(
+        "Input Features",
+        "16"
     )
 
-    st.subheader("Models Used")
+    c4.metric(
+        "Target Classes",
+        "7"
+    )
 
-    model_df = pd.DataFrame(
+    st.subheader("Analytical Objective")
+
+    st.write(
+        """
+        The analytical objective is to build and compare multiclass
+        classification models and identify the model that provides the
+        strongest overall balance of Accuracy, Macro Precision,
+        Macro Recall and Macro F1-Score.
+        """
+    )
+
+    st.subheader("Models")
+
+    models_table = pd.DataFrame(
         {
             "Model": [
                 "Logistic Regression",
@@ -167,11 +385,11 @@ if page == "Project Overview":
                 "K-Nearest Neighbors"
             ],
             "Role": [
-                "Baseline",
-                "Tuned Model",
-                "Tuned Model"
+                "Baseline model",
+                "Tuned model",
+                "Tuned model"
             ],
-            "Tuning": [
+            "Configuration": [
                 "Fixed parameters",
                 "GridSearchCV",
                 "GridSearchCV"
@@ -180,122 +398,248 @@ if page == "Project Overview":
     )
 
     st.dataframe(
-        model_df,
+        models_table,
         use_container_width=True,
         hide_index=True
     )
 
-
-# ============================================================
-# DATA ANALYSIS
-# ============================================================
-
-elif page == "Data Analysis":
-
-    st.title("📈 Data Analysis")
-
-    st.write(
-        """
-        The following visualisations are based on the original dataset
-        before model training and follow the analysis used in the notebook.
-        """
+    st.warning(
+        "This prototype is for educational decision support and is not "
+        "a medical diagnostic system."
     )
 
-    if obe is None:
+
+# ============================================================
+# DATA UNDERSTANDING
+# ============================================================
+
+elif page == "Data Understanding":
+
+    st.title("Data Understanding")
+
+    if raw_df is None:
         st.error(
-            "Dataset CSV not found. Upload "
-            "`ObesityDataSet_raw_and_data_sinthetic.csv` "
-            "to the same GitHub folder as `app.py`."
+            "Add `ObesityDataSet_raw_and_data_sinthetic.csv` "
+            "to the same folder as app.py."
         )
         st.stop()
 
     st.caption(
-        f"Dataset loaded: {dataset_filename} | "
-        f"{obe.shape[0]:,} rows × {obe.shape[1]} columns"
+        f"Loaded file: {dataset_name}"
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Rows", f"{raw_df.shape[0]:,}")
+    c2.metric("Columns", raw_df.shape[1])
+    c3.metric(
+        "Numerical Columns",
+        raw_df.select_dtypes(
+            include=np.number
+        ).shape[1]
+    )
+    c4.metric(
+        "Categorical Columns",
+        raw_df.select_dtypes(
+            exclude=np.number
+        ).shape[1]
+    )
+
+    st.subheader("Dataset Preview")
+
+    st.dataframe(
+        raw_df.head(10),
+        use_container_width=True
+    )
+
+    st.subheader("Summary Statistics")
+
+    st.dataframe(
+        raw_df.describe().T.round(3),
+        use_container_width=True
+    )
+
+    st.subheader("Target Class Distribution")
+
+    class_counts = (
+        raw_df["NObeyesdad"]
+        .value_counts()
+        .rename_axis("Obesity Level")
+        .reset_index(name="Records")
+    )
+
+    class_counts["Percentage"] = (
+        class_counts["Records"]
+        / class_counts["Records"].sum()
+        * 100
+    ).round(2)
+
+    st.dataframe(
+        class_counts,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("Data Quality Snapshot")
+
+    q1, q2, q3 = st.columns(3)
+
+    q1.metric(
+        "Missing Values",
+        int(raw_df.isnull().sum().sum())
+    )
+
+    q2.metric(
+        "Exact Duplicates",
+        int(raw_df.duplicated().sum())
+    )
+
+    q3.metric(
+        "Target Classes",
+        raw_df["NObeyesdad"].nunique()
+    )
+
+
+# ============================================================
+# DATA ANALYSIS — 5 GRAPHS
+# ============================================================
+
+elif page == "Data Analysis":
+
+    st.title("Data Analysis")
+
+    if raw_df is None:
+        st.error(
+            "Dataset CSV is required to display the analysis graphs."
+        )
+        st.stop()
+
+    st.write(
+        """
+        Five visualisations are provided to explore class distribution,
+        eating habits, lifestyle behaviour and relationships among
+        physical and numerical variables.
+        """
     )
 
     # --------------------------------------------------------
-    # GRAPH 1 - OBESITY LEVEL DISTRIBUTION
+    # GRAPH 1 — CLASS DISTRIBUTION
     # --------------------------------------------------------
 
     st.subheader("1. Distribution of Obesity Levels")
 
-    fig1, ax1 = plt.subplots(figsize=(10, 5))
-
-    sns.countplot(
-        data=obe,
-        x="NObeyesdad",
-        ax=ax1
+    class_counts = (
+        raw_df["NObeyesdad"]
+        .value_counts()
+        .reindex(CLASS_ORDER)
+        .dropna()
     )
 
-    ax1.set_title("Distribution of Obesity Levels")
-    ax1.set_xlabel("Obesity Level")
-    ax1.set_ylabel("Count")
-    ax1.tick_params(axis="x", rotation=45)
+    fig1, ax1 = plt.subplots(figsize=(11, 5.5))
+
+    bars = ax1.bar(
+        class_counts.index,
+        class_counts.values
+    )
+
+    ax1.set_title(
+        "Distribution of Obesity Levels"
+    )
+
+    ax1.set_xlabel(
+        "Obesity Level"
+    )
+
+    ax1.set_ylabel(
+        "Number of Records"
+    )
+
+    ax1.tick_params(
+        axis="x",
+        rotation=35
+    )
+
+    for bar in bars:
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 4,
+            f"{int(bar.get_height())}",
+            ha="center",
+            va="bottom",
+            fontsize=9
+        )
 
     fig1.tight_layout()
     st.pyplot(fig1)
     plt.close(fig1)
 
     st.caption(
-        "This graph shows the number of records in each obesity category."
+        "The classes are relatively close in size in the original dataset, "
+        "although they are not perfectly balanced."
     )
 
     # --------------------------------------------------------
-    # GRAPH 2 - EATING BETWEEN MEALS
+    # GRAPH 2 — CAEC BY OBESITY LEVEL
     # --------------------------------------------------------
 
     st.subheader(
-        "2. Eating Between Meals (CAEC) Broken Down by Obesity Level"
+        "2. Eating Between Meals (CAEC) by Obesity Level"
     )
 
-    snack_order = [
-        value for value in [
+    caec_table = pd.crosstab(
+        raw_df["CAEC"],
+        raw_df["NObeyesdad"]
+    )
+
+    caec_order = [
+        item for item in [
             "no",
             "Sometimes",
             "Frequently",
             "Always"
         ]
-        if value in obe["CAEC"].unique()
+        if item in caec_table.index
     ]
+
+    caec_table = caec_table.reindex(
+        caec_order
+    )
+
+    caec_table = caec_table.reindex(
+        columns=[
+            c for c in CLASS_ORDER
+            if c in caec_table.columns
+        ]
+    )
 
     fig2, ax2 = plt.subplots(figsize=(12, 6))
 
-    sns.countplot(
-        data=obe,
-        x="CAEC",
-        hue="NObeyesdad",
-        order=snack_order,
-        palette="viridis",
+    caec_table.plot(
+        kind="bar",
         ax=ax2
     )
 
     ax2.set_title(
-        "Eating Between Meals (CAEC) Broken Down by Obesity Level",
-        fontsize=14,
-        fontweight="bold"
+        "Eating Between Meals (CAEC) Broken Down by Obesity Level"
     )
 
     ax2.set_xlabel(
-        "Frequency of Snacking Between Meals",
-        fontsize=12
+        "Frequency of Snacking Between Meals"
     )
 
     ax2.set_ylabel(
-        "Number of Individuals",
-        fontsize=12
+        "Number of Individuals"
+    )
+
+    ax2.tick_params(
+        axis="x",
+        rotation=0
     )
 
     ax2.legend(
         title="Obesity Level",
-        bbox_to_anchor=(1.05, 1),
+        bbox_to_anchor=(1.02, 1),
         loc="upper left"
-    )
-
-    ax2.grid(
-        axis="y",
-        linestyle="--",
-        alpha=0.4
     )
 
     fig2.tight_layout()
@@ -303,68 +647,52 @@ elif page == "Data Analysis":
     plt.close(fig2)
 
     st.caption(
-        "This graph compares snacking frequency across the seven obesity levels."
+        "This chart compares snacking-frequency categories across all "
+        "seven obesity levels."
     )
 
     # --------------------------------------------------------
-    # GRAPH 3 - FAF VS TUE
+    # GRAPH 3 — FAF VS TUE
     # --------------------------------------------------------
 
     st.subheader(
         "3. Average Physical Activity (FAF) vs Technology Time (TUE)"
     )
 
-    avg_habits = (
-        obe.groupby("NObeyesdad")[["FAF", "TUE"]]
+    habit_means = (
+        raw_df
+        .groupby("NObeyesdad")[["FAF", "TUE"]]
         .mean()
-        .reset_index()
-    )
-
-    avg_habits_melted = avg_habits.melt(
-        id_vars="NObeyesdad",
-        var_name="Habit",
-        value_name="Average Score"
+        .reindex(CLASS_ORDER)
+        .dropna()
     )
 
     fig3, ax3 = plt.subplots(figsize=(12, 6))
 
-    sns.pointplot(
-        data=avg_habits_melted,
-        x="NObeyesdad",
-        y="Average Score",
-        hue="Habit",
-        markers=["o", "s"],
-        linestyles=["-", "--"],
-        palette="Dark2",
+    habit_means.plot(
+        kind="bar",
         ax=ax3
     )
 
     ax3.set_title(
-        "Average Physical Activity (FAF) vs. Technology Time (TUE) "
-        "by Weight Category",
-        fontsize=14,
-        fontweight="bold"
+        "Average Physical Activity and Technology Use by Obesity Level"
     )
 
     ax3.set_xlabel(
-        "Weight Category (NObeyesdad)",
-        fontsize=12
+        "Obesity Level"
     )
 
     ax3.set_ylabel(
-        "Average Feature Score",
-        fontsize=12
+        "Average Score"
     )
 
     ax3.tick_params(
         axis="x",
-        rotation=30
+        rotation=35
     )
 
-    ax3.grid(
-        True,
-        linestyle="--",
-        alpha=0.5
+    ax3.legend(
+        title="Lifestyle Feature"
     )
 
     fig3.tight_layout()
@@ -372,73 +700,131 @@ elif page == "Data Analysis":
     plt.close(fig3)
 
     st.caption(
-        "FAF represents physical activity frequency, while TUE represents "
+        "FAF represents physical-activity frequency and TUE represents "
         "technology-use time."
     )
 
     # --------------------------------------------------------
-    # GRAPH 4 - HEIGHT VS WEIGHT
+    # GRAPH 4 — HEIGHT VS WEIGHT
     # --------------------------------------------------------
 
-    st.subheader("4. Scatterplot: Height vs Weight")
+    st.subheader("4. Height vs Weight")
 
-    b, m = np.polynomial.polynomial.polyfit(
-        obe["Height"],
-        obe["Weight"],
+    x = raw_df["Height"].to_numpy()
+    y = raw_df["Weight"].to_numpy()
+
+    slope, intercept = np.polyfit(
+        x,
+        y,
         1
+    )
+
+    x_line = np.linspace(
+        x.min(),
+        x.max(),
+        100
+    )
+
+    y_line = (
+        slope * x_line
+        + intercept
     )
 
     fig4, ax4 = plt.subplots(figsize=(9, 6))
 
-    ax4.plot(
-        obe["Height"],
-        obe["Weight"],
-        "."
+    ax4.scatter(
+        x,
+        y,
+        alpha=0.45
     )
 
     ax4.plot(
-        obe["Height"],
-        b + m * obe["Height"],
-        "-"
+        x_line,
+        y_line
     )
 
-    ax4.set_xlabel("Height")
-    ax4.set_ylabel("Weight")
-    ax4.set_title("Scatterplot: Height vs Weight")
+    ax4.set_title(
+        "Scatterplot: Height vs Weight"
+    )
+
+    ax4.set_xlabel(
+        "Height (m)"
+    )
+
+    ax4.set_ylabel(
+        "Weight (kg)"
+    )
 
     fig4.tight_layout()
     st.pyplot(fig4)
     plt.close(fig4)
 
+    correlation = raw_df[
+        ["Height", "Weight"]
+    ].corr().iloc[0, 1]
+
     st.caption(
-        "The scatterplot is used to examine the relationship between "
-        "height and body weight."
+        f"Pearson correlation between Height and Weight: "
+        f"{correlation:.3f}."
     )
 
     # --------------------------------------------------------
-    # GRAPH 5 - CORRELATION HEATMAP
+    # GRAPH 5 — CORRELATION HEATMAP
     # --------------------------------------------------------
 
     st.subheader("5. Correlation Heatmap")
 
-    corr = obe.corr(
-        numeric_only=True
+    numeric_df = raw_df.select_dtypes(
+        include=np.number
     )
+
+    corr = numeric_df.corr()
 
     fig5, ax5 = plt.subplots(figsize=(10, 8))
 
-    sns.heatmap(
-        corr,
-        xticklabels=corr.columns,
-        yticklabels=corr.columns,
-        annot=True,
-        fmt=".2f",
-        cmap="rocket",
-        ax=ax5
+    heat = ax5.imshow(
+        corr.to_numpy(),
+        aspect="auto"
+    )
+
+    ax5.set_xticks(
+        np.arange(len(corr.columns))
+    )
+
+    ax5.set_yticks(
+        np.arange(len(corr.columns))
+    )
+
+    ax5.set_xticklabels(
+        corr.columns,
+        rotation=45,
+        ha="right"
+    )
+
+    ax5.set_yticklabels(
+        corr.columns
+    )
+
+    for i in range(len(corr.columns)):
+        for j in range(len(corr.columns)):
+            ax5.text(
+                j,
+                i,
+                f"{corr.iloc[i, j]:.2f}",
+                ha="center",
+                va="center",
+                fontsize=7
+            )
+
+    fig5.colorbar(
+        heat,
+        ax=ax5,
+        fraction=0.046,
+        pad=0.04
     )
 
     ax5.set_title(
-        "Correlation Heatmap for Obesity Dataset"
+        "Correlation Heatmap for Numerical Features"
     )
 
     fig5.tight_layout()
@@ -446,8 +832,8 @@ elif page == "Data Analysis":
     plt.close(fig5)
 
     st.caption(
-        "The heatmap shows the strength and direction of relationships "
-        "among the numerical variables."
+        "The heatmap summarises pairwise linear relationships among "
+        "the numerical variables."
     )
 
 
@@ -457,136 +843,171 @@ elif page == "Data Analysis":
 
 elif page == "Data Preparation":
 
-    st.title("🧹 Data Preparation")
+    st.title("Data Preparation")
 
-    st.write(
-        """
-        The notebook removes exact duplicate records, checks invalid
-        physical values, and filters highly interpolated questionnaire
-        records before encoding and model training.
-        """
+    if raw_df is None:
+        st.error(
+            "Dataset CSV is required to recreate the notebook preprocessing."
+        )
+        st.stop()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Original Rows",
+        f"{cleaning_stats['original_rows']:,}"
     )
 
-    st.subheader("Rows Before and After Cleaning")
+    c2.metric(
+        "After Duplicate Removal",
+        f"{cleaning_stats['after_duplicates']:,}"
+    )
 
-    col1, col2, col3, col4 = st.columns(4)
+    c3.metric(
+        "Removed by Filtering Rule",
+        f"{cleaning_stats['rows_removed_by_rule']:,}"
+    )
 
-    col1.metric("Original Rows", "2,111")
-    col2.metric("After Duplicate Removal", "2,087")
-    col3.metric("Rows Removed by Filtering", "1,210")
-    col4.metric("Final Rows", "877")
+    c4.metric(
+        "Final Rows",
+        f"{cleaning_stats['final_rows']:,}"
+    )
 
-    cleaning_df = pd.DataFrame(
+    st.subheader("Cleaning Summary")
+
+    cleaning_table = pd.DataFrame(
         {
-            "Stage": [
-                "Original Dataset",
-                "After Duplicate Removal",
-                "After Interpolation Filtering"
-            ],
-            "Rows": [
-                2111,
-                2087,
-                877
-            ]
-        }
-    )
-
-    st.dataframe(
-        cleaning_df,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.bar_chart(
-        cleaning_df.set_index("Stage")["Rows"]
-    )
-
-    st.subheader("Train / Test Split")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Training Samples", "701")
-    col2.metric("Testing Samples", "176")
-    col3.metric("Train / Test Split", "80% / 20%")
-
-    st.subheader("Main Preprocessing Steps")
-
-    preprocessing_df = pd.DataFrame(
-        {
-            "Step": [
-                "1",
-                "2",
-                "3",
-                "4",
-                "5",
-                "6",
-                "7",
-                "8"
-            ],
-            "Process": [
+            "Check / Transformation": [
                 "Missing-value check",
-                "Remove exact duplicates",
-                "Invalid-value check",
-                "Detect interpolated ordinal values",
-                "Filter highly interpolated records",
-                "Target and categorical encoding",
-                "80/20 stratified split",
-                "Feature standardization"
+                "Exact duplicate removal",
+                "Invalid physical-value check",
+                "Interpolated ordinal-value detection",
+                "Highly interpolated record filtering",
+                "Target encoding",
+                "Categorical encoding",
+                "Train / test split",
+                "Standardisation"
             ],
             "Method": [
-                "No missing values found",
-                "24 duplicate rows removed",
-                "Age, Height and Weight checked for invalid values",
-                "FCVC, NCP, CH2O, FAF and TUE checked",
-                "Remove rows with Interpolated_Count >= 3",
-                "LabelEncoder + one-hot encoding",
-                "random_state=42 and stratify=y",
+                f"{cleaning_stats['missing_values']} missing values found",
+                f"{cleaning_stats['duplicate_rows']} exact duplicate rows removed",
+                (
+                    "Age, Height and Weight > 0; "
+                    f"{cleaning_stats['invalid_rows']} invalid rows found"
+                ),
+                "Check FCVC, NCP, CH2O, FAF and TUE for non-integer values",
+                "Remove records where Interpolated_Count >= 3",
+                "LabelEncoder for NObeyesdad",
+                "One-hot encoding with drop_first=True",
+                "80% training / 20% testing, stratified, random_state=42",
                 "StandardScaler fitted on training data only"
             ]
         }
     )
 
     st.dataframe(
-        preprocessing_df,
+        cleaning_table,
         use_container_width=True,
         hide_index=True
     )
 
+    st.subheader("Row Retention")
+
+    stages = pd.DataFrame(
+        {
+            "Stage": [
+                "Original",
+                "After Duplicate Removal",
+                "Final Prepared Dataset"
+            ],
+            "Rows": [
+                cleaning_stats["original_rows"],
+                cleaning_stats["after_duplicates"],
+                cleaning_stats["final_rows"]
+            ]
+        }
+    )
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    bars = ax.bar(
+        stages["Stage"],
+        stages["Rows"]
+    )
+
+    ax.set_title(
+        "Dataset Size Through Data Preparation"
+    )
+
+    ax.set_ylabel(
+        "Number of Rows"
+    )
+
+    ax.tick_params(
+        axis="x",
+        rotation=15
+    )
+
+    for bar in bars:
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 20,
+            f"{int(bar.get_height()):,}",
+            ha="center"
+        )
+
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    st.subheader("Class Distribution After Preparation")
+
+    prepared_distribution = (
+        cleaned_df["NObeyesdad"]
+        .value_counts()
+        .rename_axis("Obesity Level")
+        .reset_index(name="Records")
+    )
+
+    st.dataframe(
+        prepared_distribution,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    final_train = int(
+        cleaned_df.shape[0] * 0.8
+    )
+
     st.info(
-        "Filtering rule: if at least 3 of the 5 selected ordinal survey "
-        "variables contain interpolated non-integer values, the row is removed."
+        "The actual notebook split contains 701 training records and "
+        "176 testing records, with 23 encoded input features."
     )
 
-    st.success(
-        "The scaler is fitted only on the training set, then used to "
-        "transform the test set and new Streamlit input."
+    st.warning(
+        "Limitation: the interpolation filtering rule removes a large "
+        "proportion of the duplicate-cleaned dataset. This should be "
+        "reported transparently because it can affect class representation "
+        "and generalisability."
     )
-
-    if feature_columns is not None:
-        with st.expander("Encoded feature columns used by the model"):
-            st.write(feature_columns)
 
 
 # ============================================================
-# MODEL COMPARISON
+# MODEL EVALUATION
 # ============================================================
 
-elif page == "Model Comparison":
+elif page == "Model Evaluation":
 
-    st.title("🤖 Model Comparison")
+    st.title("Model Evaluation")
 
     st.write(
         """
-        Logistic Regression is used as the baseline model.
-        Decision Tree is tuned using Macro F1-Score, while KNN is tuned
-        using accuracy in GridSearchCV. The final models are evaluated
-        using Accuracy, Macro Precision, Macro Recall, and Macro F1-Score.
+        All models are compared using Accuracy, Macro Precision,
+        Macro Recall and Macro F1-Score. Macro averaging gives each
+        obesity class equal importance when calculating Precision,
+        Recall and F1.
         """
     )
-
-    # --------------------------------------------------------
-    # PARAMETERS
-    # --------------------------------------------------------
 
     st.subheader("Model Configuration")
 
@@ -594,8 +1015,8 @@ elif page == "Model Comparison":
 
     with col1:
         st.markdown("#### Logistic Regression")
-        st.caption("Baseline")
-        st.write(
+        st.caption("Baseline model")
+        st.json(
             {
                 "C": 1.0,
                 "solver": "lbfgs",
@@ -603,12 +1024,12 @@ elif page == "Model Comparison":
                 "max_iter": 3000
             }
         )
-        st.write("Tuning: Fixed parameters / No GridSearchCV")
+        st.write("Fixed configuration")
 
     with col2:
         st.markdown("#### Decision Tree")
         st.caption("GridSearchCV tuned")
-        st.write(
+        st.json(
             {
                 "criterion": "entropy",
                 "max_depth": 10,
@@ -616,12 +1037,12 @@ elif page == "Model Comparison":
                 "min_samples_split": 5
             }
         )
-        st.write("CV Macro F1: 84.21%")
+        st.write("CV Macro F1: **84.21%**")
 
     with col3:
         st.markdown("#### K-Nearest Neighbors")
         st.caption("GridSearchCV tuned")
-        st.write(
+        st.json(
             {
                 "metric": "manhattan",
                 "n_neighbors": 5,
@@ -629,165 +1050,212 @@ elif page == "Model Comparison":
                 "weights": "distance"
             }
         )
-        st.write("CV Accuracy: 72.05%")
+        st.write("GridSearch scoring: **Accuracy**")
+        st.write("Best CV Accuracy: **72.05%**")
 
     st.divider()
-
-    # --------------------------------------------------------
-    # PERFORMANCE DATAFRAME
-    # Matches the notebook evaluation output
-    # --------------------------------------------------------
 
     st.subheader(
         "Overall Performance Comparison of Machine Learning Models"
     )
 
-    performance_df = pd.DataFrame(
-        {
-            "Model": [
-                "Decision Tree",
-                "Logistic Regression",
-                "K-Nearest Neighbors"
-            ],
-            "Accuracy": [
-                89.2045,
-                81.2500,
-                78.9773
-            ],
-            "Macro Precision": [
-                90.4424,
-                74.3214,
-                75.6639
-            ],
-            "Macro Recall": [
-                83.3784,
-                72.2707,
-                70.7920
-            ],
-            "Macro F1-Score": [
-                85.5800,
-                72.7197,
-                72.3218
-            ]
-        }
-    )
+    display_results = NOTEBOOK_RESULTS.copy()
 
-    display_df = performance_df.copy()
-
-    for col in [
+    for metric in [
         "Accuracy",
         "Macro Precision",
         "Macro Recall",
         "Macro F1-Score"
     ]:
-        display_df[col] = (
-            display_df[col]
-            .map(lambda value: f"{value:.2f}%")
+        display_results[metric] = (
+            display_results[metric]
+            .map(lambda x: f"{x:.2f}%")
         )
 
     st.dataframe(
-        display_df,
+        display_results,
         use_container_width=True,
         hide_index=True
     )
 
-    # --------------------------------------------------------
-    # SAME STYLE AS NOTEBOOK CODING PART
-    # --------------------------------------------------------
-
-    plot_metrics = [
-        "Accuracy",
-        "Macro Precision",
-        "Macro Recall",
-        "Macro F1-Score"
-    ]
-
     plot_df = (
-        performance_df[
-            ["Model"] + plot_metrics
-        ]
+        NOTEBOOK_RESULTS
         .set_index("Model")
     )
 
-    fig_perf, ax_perf = plt.subplots(
+    fig, ax = plt.subplots(
         figsize=(13, 7)
     )
 
     plot_df.plot(
         kind="bar",
         width=0.75,
-        ax=ax_perf
+        ax=ax
     )
 
-    ax_perf.set_title(
+    ax.set_title(
         "Overall Performance Comparison of Machine Learning Models",
         fontsize=15,
         pad=15
     )
 
-    ax_perf.set_xlabel(
-        "Machine Learning Model",
-        fontsize=12
+    ax.set_xlabel(
+        "Machine Learning Model"
     )
 
-    ax_perf.set_ylabel(
-        "Performance Score (%)",
-        fontsize=12
+    ax.set_ylabel(
+        "Performance Score (%)"
     )
 
-    ax_perf.set_ylim(
+    ax.set_ylim(
         0,
         105
     )
 
-    ax_perf.tick_params(
+    ax.tick_params(
         axis="x",
-        rotation=0,
-        labelsize=10
+        rotation=0
     )
 
-    ax_perf.legend(
+    ax.legend(
         title="Evaluation Metrics",
         loc="lower right"
     )
 
-    for container in ax_perf.containers:
-        labels = [
-            f"{bar.get_height():.2f}%"
-            for bar in container
-        ]
-
-        ax_perf.bar_label(
+    for container in ax.containers:
+        ax.bar_label(
             container,
-            labels=labels,
+            labels=[
+                f"{bar.get_height():.2f}%"
+                for bar in container
+            ],
             padding=3,
-            fontsize=9
+            fontsize=8
         )
 
-    fig_perf.tight_layout()
-    st.pyplot(fig_perf)
-    plt.close(fig_perf)
-
-    # --------------------------------------------------------
-    # BEST MODEL
-    # --------------------------------------------------------
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
     st.subheader("Best Overall Model")
 
-    st.success("🏆 Decision Tree")
+    b1, b2, b3, b4 = st.columns(4)
 
-    col1, col2, col3, col4 = st.columns(4)
+    b1.metric("Accuracy", "89.20%")
+    b2.metric("Macro Precision", "90.44%")
+    b3.metric("Macro Recall", "83.38%")
+    b4.metric("Macro F1-Score", "85.58%")
 
-    col1.metric("Accuracy", "89.20%")
-    col2.metric("Macro Precision", "90.44%")
-    col3.metric("Macro Recall", "83.38%")
-    col4.metric("Macro F1", "85.58%")
+    st.success(
+        "🏆 Decision Tree achieved the highest Macro F1-Score and "
+        "the highest Accuracy among the three evaluated models."
+    )
+
+    st.subheader("Confusion Matrix — Best Model")
+
+    if (
+        model is not None
+        and cleaned_df is not None
+        and scaler is not None
+        and label_encoder is not None
+        and feature_columns is not None
+    ):
+
+        try:
+            X_test_scaled, y_test = recreate_test_set(
+                cleaned_df
+            )
+
+            best_pred = model.predict(
+                X_test_scaled
+            )
+
+            dynamic_accuracy = accuracy_score(
+                y_test,
+                best_pred
+            ) * 100
+
+            dynamic_precision = precision_score(
+                y_test,
+                best_pred,
+                average="macro",
+                zero_division=0
+            ) * 100
+
+            dynamic_recall = recall_score(
+                y_test,
+                best_pred,
+                average="macro",
+                zero_division=0
+            ) * 100
+
+            dynamic_f1 = f1_score(
+                y_test,
+                best_pred,
+                average="macro",
+                zero_division=0
+            ) * 100
+
+            fig_cm, ax_cm = plt.subplots(
+                figsize=(9, 8)
+            )
+
+            ConfusionMatrixDisplay.from_predictions(
+                y_test,
+                best_pred,
+                display_labels=label_encoder.classes_,
+                xticks_rotation=45,
+                ax=ax_cm
+            )
+
+            ax_cm.set_title(
+                f"Confusion Matrix - {type(model).__name__}"
+            )
+
+            fig_cm.tight_layout()
+            st.pyplot(fig_cm)
+            plt.close(fig_cm)
+
+            st.caption(
+                "Rows represent actual classes and columns represent "
+                "predicted classes. Diagonal cells are correct predictions."
+            )
+
+            with st.expander(
+                "Verify loaded best-model metrics"
+            ):
+                st.write(
+                    {
+                        "Accuracy": percent(dynamic_accuracy),
+                        "Macro Precision": percent(dynamic_precision),
+                        "Macro Recall": percent(dynamic_recall),
+                        "Macro F1-Score": percent(dynamic_f1)
+                    }
+                )
+
+        except Exception as exc:
+            st.warning(
+                "The confusion matrix could not be recreated from the "
+                "saved model files."
+            )
+            st.code(str(exc))
+
+    else:
+        st.info(
+            "Upload the dataset and four saved model/preprocessing files "
+            "to display the best-model confusion matrix."
+        )
+
+    st.subheader("Evaluation Interpretation")
 
     st.write(
         """
-        **Why Decision Tree was selected:**  
-        It achieved the highest Macro F1-Score and Accuracy among the
-        three evaluated models in the notebook.
+        - **Decision Tree** provides the strongest overall performance.
+        - **Macro Recall is lower than Accuracy**, indicating that some
+          classes are harder to detect consistently.
+        - The confusion matrix is important because it shows which
+          obesity classes are being confused, rather than only reporting
+          one overall score.
         """
     )
 
@@ -798,209 +1266,190 @@ elif page == "Model Comparison":
 
 elif page == "Live Prediction":
 
-    st.title("🔍 Live Obesity Level Prediction")
+    st.title("Live Obesity-Level Prediction")
 
-    if model is None:
+    if (
+        model is None
+        or scaler is None
+        or label_encoder is None
+        or feature_columns is None
+    ):
         st.error(
-            "The prediction model files are not available. "
-            "Upload these four files to the same GitHub folder as app.py:"
+            "Prediction files are missing. Add the following files "
+            "to the same folder as app.py:"
         )
 
         st.code(
-            """
-best_obesity_model.pkl
+            """best_obesity_model.pkl
 scaler.pkl
 label_encoder.pkl
-feature_columns.pkl
-            """.strip()
+feature_columns.pkl"""
         )
 
         if model_error:
-            with st.expander("Model loading error"):
+            with st.expander("Loading error"):
                 st.code(model_error)
 
         st.stop()
 
-    st.write(
-        """
-        Enter the person's physical, dietary, and lifestyle information
-        below. The saved best model will process the input using the same
-        encoded feature structure and scaler used during training.
-        """
-    )
-
     st.info(
-        f"Model currently loaded: {type(model).__name__}"
+        f"Loaded prediction model: {type(model).__name__}"
     )
 
-    # --------------------------------------------------------
-    # BASIC INFORMATION
-    # --------------------------------------------------------
+    with st.form("prediction_form"):
 
-    st.subheader("Personal Information")
+        st.subheader("Physical Information")
 
-    col1, col2 = st.columns(2)
+        c1, c2 = st.columns(2)
 
-    with col1:
-        gender = st.selectbox(
-            "Gender",
-            ["Male", "Female"]
-        )
+        with c1:
+            gender = st.selectbox(
+                "Gender",
+                ["Female", "Male"]
+            )
 
-        age = st.number_input(
-            "Age",
-            min_value=10.0,
-            max_value=100.0,
-            value=25.0,
-            step=1.0
-        )
+            age = st.number_input(
+                "Age",
+                min_value=10.0,
+                max_value=100.0,
+                value=25.0,
+                step=1.0
+            )
 
-        height = st.number_input(
-            "Height (metres)",
-            min_value=1.20,
-            max_value=2.20,
-            value=1.70,
-            step=0.01
-        )
+            height = st.number_input(
+                "Height (m)",
+                min_value=1.20,
+                max_value=2.20,
+                value=1.70,
+                step=0.01
+            )
 
-        weight = st.number_input(
-            "Weight (kg)",
-            min_value=30.0,
-            max_value=250.0,
-            value=70.0,
-            step=1.0
-        )
+            weight = st.number_input(
+                "Weight (kg)",
+                min_value=30.0,
+                max_value=250.0,
+                value=70.0,
+                step=1.0
+            )
 
-    with col2:
-        family_history = st.selectbox(
-            "Family history of overweight?",
-            ["yes", "no"]
-        )
+        with c2:
+            family_history = st.selectbox(
+                "Family history of overweight",
+                ["no", "yes"]
+            )
 
-        favc = st.selectbox(
-            "Frequently consume high-calorie food?",
-            ["yes", "no"]
-        )
+            favc = st.selectbox(
+                "Frequent high-calorie food consumption (FAVC)",
+                ["no", "yes"]
+            )
 
-        smoke = st.selectbox(
-            "Do you smoke?",
-            ["yes", "no"]
-        )
+            smoke = st.selectbox(
+                "Smoking (SMOKE)",
+                ["no", "yes"]
+            )
 
-        scc = st.selectbox(
-            "Do you monitor calorie intake?",
-            ["yes", "no"]
+            scc = st.selectbox(
+                "Calorie monitoring (SCC)",
+                ["no", "yes"]
+            )
+
+        st.subheader("Eating Habits")
+
+        c3, c4 = st.columns(2)
+
+        with c3:
+            fcvc = st.slider(
+                "Vegetable consumption frequency (FCVC)",
+                1.0,
+                3.0,
+                2.0,
+                0.1
+            )
+
+            ncp = st.slider(
+                "Number of main meals (NCP)",
+                1.0,
+                4.0,
+                3.0,
+                0.1
+            )
+
+            caec = st.selectbox(
+                "Eating between meals (CAEC)",
+                [
+                    "no",
+                    "Sometimes",
+                    "Frequently",
+                    "Always"
+                ]
+            )
+
+        with c4:
+            ch2o = st.slider(
+                "Daily water consumption (CH2O)",
+                1.0,
+                3.0,
+                2.0,
+                0.1
+            )
+
+            calc = st.selectbox(
+                "Alcohol consumption (CALC)",
+                [
+                    "no",
+                    "Sometimes",
+                    "Frequently",
+                    "Always"
+                ]
+            )
+
+        st.subheader("Lifestyle")
+
+        c5, c6 = st.columns(2)
+
+        with c5:
+            faf = st.slider(
+                "Physical activity frequency (FAF)",
+                0.0,
+                3.0,
+                1.0,
+                0.1
+            )
+
+            tue = st.slider(
+                "Technology-use time (TUE)",
+                0.0,
+                2.0,
+                1.0,
+                0.1
+            )
+
+        with c6:
+            mtrans = st.selectbox(
+                "Main transportation (MTRANS)",
+                [
+                    "Automobile",
+                    "Bike",
+                    "Motorbike",
+                    "Public_Transportation",
+                    "Walking"
+                ]
+            )
+
+        submitted = st.form_submit_button(
+            "Predict Obesity Level",
+            type="primary",
+            use_container_width=True
         )
 
     bmi = weight / (height ** 2)
 
     st.metric(
-        "Calculated BMI",
+        "Calculated BMI for reference",
         f"{bmi:.2f}"
     )
 
-    # --------------------------------------------------------
-    # EATING HABITS
-    # --------------------------------------------------------
-
-    st.subheader("Eating Habits")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        fcvc = st.slider(
-            "Vegetable consumption frequency (FCVC)",
-            min_value=1.0,
-            max_value=3.0,
-            value=2.0,
-            step=0.1
-        )
-
-        ncp = st.slider(
-            "Number of main meals per day (NCP)",
-            min_value=1.0,
-            max_value=4.0,
-            value=3.0,
-            step=0.1
-        )
-
-        caec = st.selectbox(
-            "Food consumption between meals (CAEC)",
-            [
-                "no",
-                "Sometimes",
-                "Frequently",
-                "Always"
-            ]
-        )
-
-    with col2:
-        ch2o = st.slider(
-            "Daily water consumption (CH2O)",
-            min_value=1.0,
-            max_value=3.0,
-            value=2.0,
-            step=0.1
-        )
-
-        calc = st.selectbox(
-            "Alcohol consumption (CALC)",
-            [
-                "no",
-                "Sometimes",
-                "Frequently",
-                "Always"
-            ]
-        )
-
-    # --------------------------------------------------------
-    # LIFESTYLE
-    # --------------------------------------------------------
-
-    st.subheader("Lifestyle")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        faf = st.slider(
-            "Physical activity frequency (FAF)",
-            min_value=0.0,
-            max_value=3.0,
-            value=1.0,
-            step=0.1
-        )
-
-        tue = st.slider(
-            "Technology usage time (TUE)",
-            min_value=0.0,
-            max_value=2.0,
-            value=1.0,
-            step=0.1
-        )
-
-    with col2:
-        mtrans = st.selectbox(
-            "Main mode of transportation (MTRANS)",
-            [
-                "Automobile",
-                "Bike",
-                "Motorbike",
-                "Public_Transportation",
-                "Walking"
-            ]
-        )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # PREDICTION
-    # --------------------------------------------------------
-
-    if st.button(
-        "Predict Obesity Level",
-        type="primary",
-        use_container_width=True
-    ):
+    if submitted:
 
         input_encoded = pd.DataFrame(
             0.0,
@@ -1021,7 +1470,10 @@ feature_columns.pkl
 
         for column, value in numeric_values.items():
             if column in input_encoded.columns:
-                input_encoded.loc[0, column] = value
+                input_encoded.loc[
+                    0,
+                    column
+                ] = value
 
         categorical_values = {
             "Gender": gender,
@@ -1035,10 +1487,15 @@ feature_columns.pkl
         }
 
         for feature, value in categorical_values.items():
-            dummy_column = f"{feature}_{value}"
+            dummy_column = (
+                f"{feature}_{value}"
+            )
 
             if dummy_column in input_encoded.columns:
-                input_encoded.loc[0, dummy_column] = 1.0
+                input_encoded.loc[
+                    0,
+                    dummy_column
+                ] = 1.0
 
         input_scaled = scaler.transform(
             input_encoded
@@ -1048,12 +1505,12 @@ feature_columns.pkl
             input_scaled
         )
 
-        predicted_class = label_encoder.inverse_transform(
+        predicted_label = label_encoder.inverse_transform(
             prediction.astype(int)
         )[0]
 
         st.success(
-            f"Predicted Obesity Level: **{predicted_class}**"
+            f"Predicted Obesity Level: **{predicted_label}**"
         )
 
         if hasattr(model, "predict_proba"):
@@ -1062,64 +1519,163 @@ feature_columns.pkl
                 input_scaled
             )[0]
 
-            highest_probability = (
-                probabilities.max() * 100
-            )
+            model_classes = np.asarray(
+                model.classes_
+            ).astype(int)
 
-            st.metric(
-                "Model Probability",
-                f"{highest_probability:.2f}%"
-            )
-
-            st.caption(
-                "This is the model's prediction probability. "
-                "It is not a medical diagnosis."
-            )
-
-            class_labels = label_encoder.inverse_transform(
-                model.classes_.astype(int)
+            class_labels = (
+                label_encoder.inverse_transform(
+                    model_classes
+                )
             )
 
             probability_df = pd.DataFrame(
                 {
                     "Obesity Level": class_labels,
-                    "Probability (%)": probabilities * 100
+                    "Probability (%)": (
+                        probabilities * 100
+                    ).round(2)
                 }
+            ).sort_values(
+                "Probability (%)",
+                ascending=False
             )
 
-            probability_df["Probability (%)"] = (
-                probability_df["Probability (%)"]
-                .round(2)
+            p1, p2 = st.columns(
+                [1, 2]
             )
 
-            probability_df = (
-                probability_df
-                .sort_values(
-                    "Probability (%)",
-                    ascending=False
+            with p1:
+                st.metric(
+                    "Highest Model Probability",
+                    f"{probability_df.iloc[0]['Probability (%)']:.2f}%"
                 )
-                .reset_index(drop=True)
+
+            with p2:
+                st.dataframe(
+                    probability_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            fig_prob, ax_prob = plt.subplots(
+                figsize=(9, 5)
             )
 
-            st.subheader("Class Probability")
-
-            st.dataframe(
-                probability_df,
-                use_container_width=True,
-                hide_index=True
+            sorted_prob = probability_df.sort_values(
+                "Probability (%)"
             )
 
-            st.bar_chart(
-                probability_df.set_index(
-                    "Obesity Level"
-                )["Probability (%)"]
+            ax_prob.barh(
+                sorted_prob["Obesity Level"],
+                sorted_prob["Probability (%)"]
             )
 
-        with st.expander("Show processed model input"):
+            ax_prob.set_title(
+                "Prediction Probability by Class"
+            )
+
+            ax_prob.set_xlabel(
+                "Probability (%)"
+            )
+
+            ax_prob.set_xlim(
+                0,
+                100
+            )
+
+            fig_prob.tight_layout()
+            st.pyplot(fig_prob)
+            plt.close(fig_prob)
+
+        st.warning(
+            "This prediction is produced by a coursework machine-learning "
+            "model and should not be interpreted as a medical diagnosis."
+        )
+
+        with st.expander(
+            "Show encoded model input"
+        ):
             st.dataframe(
                 input_encoded,
                 use_container_width=True
             )
+
+
+# ============================================================
+# CONCLUSION & LIMITATIONS
+# ============================================================
+
+elif page == "Conclusion & Limitations":
+
+    st.title("Conclusion & Limitations")
+
+    st.subheader("Key Findings")
+
+    st.write(
+        """
+        **Decision Tree** is the strongest of the three evaluated models,
+        achieving **89.20% Accuracy** and **85.58% Macro F1-Score**.
+        Logistic Regression and KNN provide lower overall performance on
+        the final prepared dataset.
+        """
+    )
+
+    st.subheader("Why Macro Metrics Matter")
+
+    st.write(
+        """
+        After data preparation, the class distribution is no longer
+        balanced. Macro Precision, Macro Recall and Macro F1 therefore
+        provide useful class-sensitive evaluation in addition to Accuracy.
+        """
+    )
+
+    st.subheader("Main Limitations")
+
+    limitations = pd.DataFrame(
+        {
+            "Limitation": [
+                "Large row reduction",
+                "Class imbalance after filtering",
+                "Small sample for Obesity_Type_II",
+                "Synthetic / interpolated observations",
+                "Single dataset",
+                "Educational prototype"
+            ],
+            "Impact": [
+                "Filtering may reduce representativeness and generalisability.",
+                "Overall Accuracy can hide weaker performance on smaller classes.",
+                "Performance estimates for this class may be unstable.",
+                "Generated observations may not fully reflect real-world behaviour.",
+                "External validity has not been tested on a separate population.",
+                "Predictions are not suitable for clinical diagnosis."
+            ]
+        }
+    )
+
+    st.dataframe(
+        limitations,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("Potential Improvements")
+
+    st.write(
+        """
+        Future work could evaluate alternative preprocessing strategies that
+        retain more records, collect more real-world observations, use an
+        independent external test dataset, and compare additional models
+        under the same cross-validation and evaluation framework.
+        """
+    )
+
+    st.success(
+        "Overall contribution: the prototype demonstrates an end-to-end "
+        "CRISP-DM-style workflow from data understanding and preparation "
+        "through modelling, evaluation and interactive prediction."
+    )
 
 
 # ============================================================
