@@ -404,11 +404,6 @@ if page == "Project Overview":
         hide_index=True
     )
 
-    st.warning(
-        "This prototype is for educational decision support and is not "
-        "a medical diagnostic system."
-    )
-
 
 
 
@@ -665,86 +660,16 @@ elif page == "Data Analysis":
             hide_index=True
         )
 
-    # --------------------------------------------------------
-    # GRAPH 4 — HEIGHT VS WEIGHT
-    # Notebook:
-    # b, m = polyfit(obe.Height, obe.Weight, 1)
-    # --------------------------------------------------------
-
-    st.subheader(
-        "4. Scatterplot: Height vs Weight"
-    )
-
-    from numpy.polynomial.polynomial import polyfit
-
-    b, m = polyfit(
-        obe["Height"],
-        obe["Weight"],
-        1
-    )
-
-    fig4, ax4 = plt.subplots(
-        figsize=(9, 6)
-    )
-
-    ax4.plot(
-        obe["Height"],
-        obe["Weight"],
-        "."
-    )
-
-    ax4.plot(
-        obe["Height"],
-        b + m * obe["Height"],
-        "-"
-    )
-
-    ax4.set_xlabel(
-        "Height"
-    )
-
-    ax4.set_ylabel(
-        "Weight"
-    )
-
-    ax4.set_title(
-        "Scatterplot: Height vs Weight"
-    )
-
-    fig4.tight_layout()
-
-    st.pyplot(
-        fig4
-    )
-
-    plt.close(
-        fig4
-    )
-
-    height_weight_corr = (
-        obe[[
-            "Height",
-            "Weight"
-        ]]
-        .corr()
-        .iloc[0, 1]
-    )
-
-    st.caption(
-        f"The dots represent individual records and the line is the "
-        f"linear trend fitted in the notebook. Pearson correlation = "
-        f"{height_weight_corr:.3f}."
-    )
 
     # --------------------------------------------------------
-    # GRAPH 5 — CORRELATION HEATMAP
+    # GRAPH 4 — CORRELATION HEATMAP
     # Notebook:
     # corr = obe.corr(numeric_only=True)
     # sns.heatmap(... annot=True, fmt=".2f", cmap="rocket")
     # --------------------------------------------------------
 
     st.subheader(
-        "5. Correlation Heatmap"
+        "4. Correlation Heatmap"
     )
 
     corr = obe.corr(
@@ -925,13 +850,77 @@ elif page == "Data Preparation":
         hide_index=True
     )
 
-    final_train = int(
-        cleaned_df.shape[0] * 0.8
+
+    st.subheader("Training and Testing Data")
+
+    train_col, test_col, split_col = st.columns(3)
+
+    train_col.metric(
+        "Training Records",
+        "701"
     )
 
-    st.info(
-        "The actual notebook split contains 701 training records and "
-        "176 testing records, with 23 encoded input features."
+    test_col.metric(
+        "Testing Records",
+        "176"
+    )
+
+    split_col.metric(
+        "Train / Test Split",
+        "80% / 20%"
+    )
+
+    split_df = pd.DataFrame(
+        {
+            "Dataset": [
+                "Training",
+                "Testing"
+            ],
+            "Records": [
+                701,
+                176
+            ]
+        }
+    )
+
+    fig_split, ax_split = plt.subplots(
+        figsize=(7, 4)
+    )
+
+    split_bars = ax_split.bar(
+        split_df["Dataset"],
+        split_df["Records"]
+    )
+
+    ax_split.set_title(
+        "Training and Testing Data"
+    )
+
+    ax_split.set_ylabel(
+        "Number of Records"
+    )
+
+    for bar in split_bars:
+        ax_split.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 8,
+            f"{int(bar.get_height())}",
+            ha="center"
+        )
+
+    fig_split.tight_layout()
+
+    st.pyplot(
+        fig_split
+    )
+
+    plt.close(
+        fig_split
+    )
+
+    st.caption(
+        "The prepared dataset is divided into 80% training data and "
+        "20% testing data using stratified sampling."
     )
 
 
@@ -1754,11 +1743,6 @@ feature_columns.pkl"""
                 input_encoded,
                 use_container_width=True
             )
-
-    st.warning(
-        "This prediction is for educational purposes only and is not "
-        "a medical diagnosis."
-    )
 
 
 # ============================================================
