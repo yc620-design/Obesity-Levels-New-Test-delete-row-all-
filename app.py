@@ -1660,58 +1660,123 @@ feature_columns.pkl"""
     # ========================================================
 
     with st.expander(
-        "See Lifestyle Profile Chart"
+        "See Lifestyle Profile Summary"
     ):
 
         st.write(
             """
-            This chart is only a visual summary of the lifestyle values
-            entered above. A larger value means a higher entered level for
-            that feature. It is **not** a health score.
+            This section shows the lifestyle values you entered in a simple
+            bar chart. Each bar is compared with the **maximum value available
+            for that feature**.
+
+            **Important:** A longer bar does not mean healthier. It only means
+            a higher input value.
             """
         )
 
-        labels = [
-            "Vegetables",
-            "Meals",
-            "Water",
-            "Activity",
-            "Technology"
-        ]
+        # Human-friendly labels
+        vegetable_level = {
+            1.0: "Low",
+            2.0: "Medium",
+            3.0: "High"
+        }[fcvc]
 
-        values = [
-            ((fcvc - 1.0) / 2.0) * 100,
-            ((ncp - 1.0) / 3.0) * 100,
-            ((ch2o - 1.0) / 2.0) * 100,
-            (faf / 3.0) * 100,
-            (tue / 2.0) * 100
-        ]
+        water_level = {
+            1.0: "Low",
+            2.0: "Medium",
+            3.0: "High"
+        }[ch2o]
 
-        radar_fig = go.Figure()
+        activity_level = {
+            0.0: "Very Low",
+            1.0: "Low",
+            2.0: "Moderate",
+            3.0: "High"
+        }[faf]
 
-        radar_fig.add_trace(
-            go.Scatterpolar(
-                r=values + [values[0]],
-                theta=labels + [labels[0]],
-                fill="toself",
-                name="Current Profile"
-            )
+        technology_level = {
+            0.0: "Low",
+            1.0: "Medium",
+            2.0: "High"
+        }[tue]
+
+        lifestyle_df = pd.DataFrame(
+            {
+                "Lifestyle Feature": [
+                    "Vegetable Consumption",
+                    "Main Meals",
+                    "Water Intake",
+                    "Physical Activity",
+                    "Technology Usage"
+                ],
+                "Relative Level (%)": [
+                    (fcvc / 3.0) * 100,
+                    (ncp / 4.0) * 100,
+                    (ch2o / 3.0) * 100,
+                    (faf / 3.0) * 100,
+                    (tue / 2.0) * 100
+                ],
+                "Your Input": [
+                    f"{vegetable_level} ({fcvc:.0f}/3)",
+                    f"{int(ncp)} meals/day",
+                    f"{water_level} ({ch2o:.0f}/3)",
+                    f"{activity_level} ({faf:.0f}/3)",
+                    f"{technology_level} ({tue:.0f}/2)"
+                ]
+            }
         )
 
-        radar_fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100]
-                )
+        # Easy-to-read horizontal bar chart
+        profile_fig = px.bar(
+            lifestyle_df,
+            x="Relative Level (%)",
+            y="Lifestyle Feature",
+            orientation="h",
+            text="Your Input",
+            title="Your Lifestyle Inputs"
+        )
+
+        profile_fig.update_traces(
+            textposition="outside"
+        )
+
+        profile_fig.update_layout(
+            xaxis=dict(
+                title="Relative Input Level (%)",
+                range=[0, 115]
             ),
-            showlegend=False,
-            height=350
+            yaxis=dict(
+                title=""
+            ),
+            height=390,
+            margin=dict(
+                l=20,
+                r=130,
+                t=60,
+                b=40
+            ),
+            showlegend=False
         )
 
         st.plotly_chart(
-            radar_fig,
+            profile_fig,
             use_container_width=True
+        )
+
+        st.caption(
+            "Example: 100% means the highest selectable value for that "
+            "feature. It does not mean 100% healthy."
+        )
+
+        st.dataframe(
+            lifestyle_df[
+                [
+                    "Lifestyle Feature",
+                    "Your Input"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
         )
 
     with st.expander(
