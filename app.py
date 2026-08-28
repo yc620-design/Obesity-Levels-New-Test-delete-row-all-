@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
 import joblib
 from pathlib import Path
 
@@ -301,7 +299,8 @@ page = st.sidebar.radio(
         "Data Analysis",
         "Data Preparation",
         "Model Evaluation",
-        "Live Prediction"
+        "Live Prediction",
+        "Conclusion & Limitations"
     ]
 )
 
@@ -1259,8 +1258,6 @@ elif page == "Model Evaluation":
           one overall score.
         """
     )
-
-
 
 
 # ============================================================
