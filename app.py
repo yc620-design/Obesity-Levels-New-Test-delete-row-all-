@@ -1297,9 +1297,9 @@ feature_columns.pkl"""
 
     st.info(
         """
-        **How to use:** Fill in the information below, then click
-        **Predict Obesity Level**. The system will use the trained
-        machine-learning model to estimate the most likely obesity category.
+        **How to use:** Fill in or change the information below.
+        The prediction updates automatically using the trained
+        machine-learning model.
         """
     )
 
@@ -1538,234 +1538,230 @@ feature_columns.pkl"""
             input_encoded.loc[0, dummy_column] = 1.0
 
     # --------------------------------------------------------
-    # PREDICTION BUTTON
+    # AUTOMATIC PREDICTION
     # --------------------------------------------------------
 
     st.divider()
 
-    predict_clicked = st.button(
-        "Predict Obesity Level",
-        type="primary",
-        use_container_width=True
+    st.info(
+        "⚡ **Automatic Prediction:** The result updates automatically "
+        "whenever you change any input above."
     )
 
-    if predict_clicked:
+    input_scaled = scaler.transform(
+        input_encoded
+    )
 
-        input_scaled = scaler.transform(
-            input_encoded
-        )
+    prediction = model.predict(
+        input_scaled
+    )
 
-        prediction = model.predict(
+    predicted_label = label_encoder.inverse_transform(
+        prediction.astype(int)
+    )[0]
+
+    friendly_label = predicted_label.replace(
+        "_",
+        " "
+    )
+
+    st.subheader("Your Prediction Result")
+
+    st.success(
+        f"### Predicted Obesity Level: {friendly_label}"
+    )
+
+    # ----------------------------------------------------
+    # SIMPLE RESULT SUMMARY
+    # ----------------------------------------------------
+
+    r1, r2, r3 = st.columns(3)
+
+    r1.metric(
+        "BMI Reference",
+        f"{bmi:.2f}"
+    )
+
+    r2.metric(
+        "Physical Activity",
+        {
+            0.0: "Very Low",
+            1.0: "Low",
+            2.0: "Moderate",
+            3.0: "High"
+        }[faf]
+    )
+
+    r3.metric(
+        "Water Intake",
+        {
+            1.0: "Low",
+            2.0: "Medium",
+            3.0: "High"
+        }[ch2o]
+    )
+
+    # ----------------------------------------------------
+    # PROBABILITIES
+    # ----------------------------------------------------
+
+    if hasattr(model, "predict_proba"):
+
+        probabilities = model.predict_proba(
             input_scaled
-        )
-
-        predicted_label = label_encoder.inverse_transform(
-            prediction.astype(int)
         )[0]
 
-        friendly_label = predicted_label.replace(
-            "_",
-            " "
+        model_classes = np.asarray(
+            model.classes_
+        ).astype(int)
+
+        class_labels = label_encoder.inverse_transform(
+            model_classes
         )
 
-        st.subheader("Your Prediction Result")
-
-        st.success(
-            f"### Predicted Obesity Level: {friendly_label}"
-        )
-
-        # ----------------------------------------------------
-        # SIMPLE RESULT SUMMARY
-        # ----------------------------------------------------
-
-        r1, r2, r3 = st.columns(3)
-
-        r1.metric(
-            "BMI Reference",
-            f"{bmi:.2f}"
-        )
-
-        r2.metric(
-            "Physical Activity",
+        probability_df = pd.DataFrame(
             {
-                0.0: "Very Low",
-                1.0: "Low",
-                2.0: "Moderate",
-                3.0: "High"
-            }[faf]
+                "Obesity Level": [
+                    label.replace("_", " ")
+                    for label in class_labels
+                ],
+                "Probability (%)": (
+                    probabilities * 100
+                ).round(2)
+            }
+        ).sort_values(
+            "Probability (%)",
+            ascending=False
+        ).reset_index(drop=True)
+
+        confidence = float(
+            probability_df.iloc[0]["Probability (%)"]
         )
 
-        r3.metric(
-            "Water Intake",
-            {
-                1.0: "Low",
-                2.0: "Medium",
-                3.0: "High"
-            }[ch2o]
+        st.metric(
+            "Model Confidence",
+            f"{confidence:.2f}%"
         )
 
-        # ----------------------------------------------------
-        # PROBABILITIES
-        # ----------------------------------------------------
+        st.caption(
+            "Model confidence means how strongly the model prefers "
+            "this class compared with the other classes."
+        )
 
-        if hasattr(model, "predict_proba"):
+        st.subheader("Top 3 Possible Classes")
 
-            probabilities = model.predict_proba(
-                input_scaled
-            )[0]
+        top3 = probability_df.head(3).copy()
 
-            model_classes = np.asarray(
-                model.classes_
-            ).astype(int)
+        st.dataframe(
+            top3,
+            use_container_width=True,
+            hide_index=True
+        )
 
-            class_labels = label_encoder.inverse_transform(
-                model_classes
-            )
-
-            probability_df = pd.DataFrame(
-                {
-                    "Obesity Level": [
-                        label.replace("_", " ")
-                        for label in class_labels
-                    ],
-                    "Probability (%)": (
-                        probabilities * 100
-                    ).round(2)
-                }
-            ).sort_values(
+        fig_prob = px.bar(
+            top3.sort_values(
                 "Probability (%)",
-                ascending=False
-            ).reset_index(drop=True)
-
-            confidence = float(
-                probability_df.iloc[0]["Probability (%)"]
-            )
-
-            st.metric(
-                "Model Confidence",
-                f"{confidence:.2f}%"
-            )
-
-            st.caption(
-                "Model confidence means how strongly the model prefers "
-                "this class compared with the other classes."
-            )
-
-            st.subheader("Top 3 Possible Classes")
-
-            top3 = probability_df.head(3).copy()
-
-            st.dataframe(
-                top3,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            fig_prob = px.bar(
-                top3.sort_values(
-                    "Probability (%)",
-                    ascending=True
-                ),
-                x="Probability (%)",
-                y="Obesity Level",
-                orientation="h",
-                text="Probability (%)",
-                title="Top 3 Prediction Probabilities"
-            )
-
-            fig_prob.update_traces(
-                texttemplate="%{text:.2f}%",
-                textposition="outside"
-            )
-
-            fig_prob.update_layout(
-                xaxis_range=[0, 100],
-                height=330
-            )
-
-            st.plotly_chart(
-                fig_prob,
-                use_container_width=True
-            )
-
-        # ----------------------------------------------------
-        # OPTIONAL EXTRA VISUAL
-        # ----------------------------------------------------
-
-        with st.expander(
-            "See Lifestyle Profile Chart"
-        ):
-
-            labels = [
-                "Vegetables",
-                "Meals",
-                "Water",
-                "Activity",
-                "Technology"
-            ]
-
-            values = [
-                ((fcvc - 1.0) / 2.0) * 100,
-                ((ncp - 1.0) / 3.0) * 100,
-                ((ch2o - 1.0) / 2.0) * 100,
-                (faf / 3.0) * 100,
-                (tue / 2.0) * 100
-            ]
-
-            radar_fig = go.Figure()
-
-            radar_fig.add_trace(
-                go.Scatterpolar(
-                    r=values + [values[0]],
-                    theta=labels + [labels[0]],
-                    fill="toself",
-                    name="Current Profile"
-                )
-            )
-
-            radar_fig.update_layout(
-                polar=dict(
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 100]
-                    )
-                ),
-                showlegend=False,
-                height=350
-            )
-
-            st.plotly_chart(
-                radar_fig,
-                use_container_width=True
-            )
-
-            st.caption(
-                "This chart only visualises the entered lifestyle values. "
-                "It is not a health score."
-            )
-
-        with st.expander(
-            "Technical Details"
-        ):
-            st.write(
-                """
-                The system converts the entered information into the same
-                encoded feature format used during model training, applies
-                the saved StandardScaler, and sends the processed values to
-                the trained model.
-                """
-            )
-
-            st.dataframe(
-                input_encoded,
-                use_container_width=True
-            )
-
-        st.warning(
-            "This prediction is for educational purposes only and is not "
-            "a medical diagnosis."
+                ascending=True
+            ),
+            x="Probability (%)",
+            y="Obesity Level",
+            orientation="h",
+            text="Probability (%)",
+            title="Top 3 Prediction Probabilities"
         )
 
+        fig_prob.update_traces(
+            texttemplate="%{text:.2f}%",
+            textposition="outside"
+        )
+
+        fig_prob.update_layout(
+            xaxis_range=[0, 100],
+            height=330
+        )
+
+        st.plotly_chart(
+            fig_prob,
+            use_container_width=True
+        )
+
+    # ----------------------------------------------------
+    # OPTIONAL EXTRA VISUAL
+    # ----------------------------------------------------
+
+    with st.expander(
+        "See Lifestyle Profile Chart"
+    ):
+
+        labels = [
+            "Vegetables",
+            "Meals",
+            "Water",
+            "Activity",
+            "Technology"
+        ]
+
+        values = [
+            ((fcvc - 1.0) / 2.0) * 100,
+            ((ncp - 1.0) / 3.0) * 100,
+            ((ch2o - 1.0) / 2.0) * 100,
+            (faf / 3.0) * 100,
+            (tue / 2.0) * 100
+        ]
+
+        radar_fig = go.Figure()
+
+        radar_fig.add_trace(
+            go.Scatterpolar(
+                r=values + [values[0]],
+                theta=labels + [labels[0]],
+                fill="toself",
+                name="Current Profile"
+            )
+        )
+
+        radar_fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100]
+                )
+            ),
+            showlegend=False,
+            height=350
+        )
+
+        st.plotly_chart(
+            radar_fig,
+            use_container_width=True
+        )
+
+        st.caption(
+            "This chart only visualises the entered lifestyle values. "
+            "It is not a health score."
+        )
+
+    with st.expander(
+        "How the Model Processes Your Input"
+    ):
+        st.write(
+            """
+            The system converts the entered information into the same
+            encoded feature format used during model training, applies
+            the saved StandardScaler, and sends the processed values to
+            the trained model.
+            """
+        )
+
+        st.dataframe(
+            input_encoded,
+            use_container_width=True
+        )
+
+    st.warning(
+        "This prediction is for educational purposes only and is not "
+        "a medical diagnosis."
+    )
 
 # ============================================================
 # FOOTER
