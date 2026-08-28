@@ -483,71 +483,62 @@ elif page == "Data Analysis":
     )
 
     # --------------------------------------------------------
-    # GRAPH 2 — EATING BETWEEN MEALS
-    # Notebook:
-    # sns.countplot(data=obe, x='CAEC',
-    #               hue='NObeyesdad', palette='viridis')
+    # GRAPH 2 — NUMBER OF PEOPLE IN EACH OBESITY LEVEL
     # --------------------------------------------------------
 
     st.subheader(
-        "2. Eating Between Meals (CAEC) by Obesity Level"
+        "2. Number of People in Each Obesity Level"
     )
 
-    # The notebook uses "No", while the CSV stores this category as "no".
-    # The lowercase value is used here so the same category appears correctly.
-    snack_order = [
-        "no",
-        "Sometimes",
-        "Frequently",
-        "Always"
-    ]
+    obesity_counts = (
+        obe["NObeyesdad"]
+        .value_counts()
+        .reset_index()
+    )
 
-    available_order = [
-        value
-        for value in snack_order
-        if value in obe["CAEC"].unique()
+    obesity_counts.columns = [
+        "Obesity Level",
+        "Number of People"
     ]
 
     fig2, ax2 = plt.subplots(
-        figsize=(12, 6)
+        figsize=(11, 6)
     )
 
-    sns.countplot(
-        data=obe,
-        x="CAEC",
-        hue="NObeyesdad",
-        palette="viridis",
-        order=available_order,
+    sns.barplot(
+        data=obesity_counts,
+        x="Obesity Level",
+        y="Number of People",
         ax=ax2
     )
 
     ax2.set_title(
-        "Eating Between Meals (CAEC) Broken Down by Obesity Level",
+        "Number of People in Each Obesity Level",
         fontsize=14,
         fontweight="bold"
     )
 
     ax2.set_xlabel(
-        "Frequency of Snacking Between Meals",
+        "Obesity Level",
         fontsize=12
     )
 
     ax2.set_ylabel(
-        "Number of Individuals",
+        "Number of People",
         fontsize=12
     )
 
-    ax2.legend(
-        title="Obesity Level",
-        bbox_to_anchor=(1.05, 1),
-        loc="upper left"
+    ax2.tick_params(
+        axis="x",
+        rotation=35
     )
 
-    ax2.grid(
-        axis="y",
-        linestyle="--",
-        alpha=0.4
-    )
+    for container in ax2.containers:
+        ax2.bar_label(
+            container,
+            fmt="%d",
+            padding=3
+        )
 
     fig2.tight_layout()
 
@@ -560,9 +551,11 @@ elif page == "Data Analysis":
     )
 
     st.caption(
-        "CAEC represents eating between meals. The graph compares "
-        "snacking-frequency categories across the obesity classes."
+        "This graph shows how many individuals belong to each "
+        "obesity-level category in the dataset."
     )
+
+
 
     # --------------------------------------------------------
     # GRAPH 3 — FAF VS TUE
